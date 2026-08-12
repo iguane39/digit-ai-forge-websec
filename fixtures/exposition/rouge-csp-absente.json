@@ -1,0 +1,11 @@
+{
+  "url": "https://exemple-forge-websec.test/",
+  "status": 200,
+  "headers": {
+    "strict-transport-security": "max-age=63072000",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=()"
+  }
+}
