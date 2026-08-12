@@ -1,0 +1,8 @@
+{
+  "name": "fixture-forge-websec-npm-vulnerable",
+  "version": "1.0.0",
+  "description": "Fixture synthétique — sens rouge oracle-sca (npm) : dépendance à CVE connue ancienne.",
+  "dependencies": {
+    "lodash": "4.17.15"
+  }
+}

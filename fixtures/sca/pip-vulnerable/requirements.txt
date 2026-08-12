@@ -1,0 +1,2 @@
+# Fixture synthétique — sens rouge oracle-sca (pip) : version ancienne à CVE connues nombreuses.
+django==1.4
