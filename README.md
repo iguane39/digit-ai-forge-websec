@@ -190,13 +190,20 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
 
 ## Limites explicites (ce que la v0 n'est pas)
 
-- **DAST : enveloppe livrée, exécution non prouvée (dette D-W1 requalifiée le 14/08/2026,
-  TF-0187).** `oracle-dast.mjs` enveloppe OWASP ZAP et traduit son rapport en verdict à
-  seuils ; son garde-fou dual-use et sa lecture de rapport sont prouvés par 13 fixtures. Mais
-  **ZAP n'est installé sur aucun poste de l'écosystème à ce jour** : la branche d'exécution
-  réelle (spider, passe passive, rapport produit par ZAP lui-même) n'est **pas** prouvée par
-  fixture, et le chemin nominal ici est un `SKIP` motivé. La dette n'est donc pas close : elle
-  passe de « pas de DAST du tout » à « DAST outillé, exécution à prouver sur poste équipé ».
+- **DAST : dette D-W1 CLOSE le 14/08/2026 (TF-0206), exécution réellement prouvée.**
+  `oracle-dast.mjs` enveloppe ZAP et traduit son rapport en verdict à seuils ; garde-fou
+  dual-use et lecture de rapport prouvés par fixtures. La **branche d'exécution a tourné** :
+  ZAP 2.17.0 via l'image officielle `ghcr.io/zaproxy/zaproxy:stable`, passe baseline passive
+  sur une instance de recette servie localement et **autorisée par un mandat écrit**, rapport
+  JSON produit par ZAP lui-même, verdict FAIL sur trois alertes *medium* réelles (absence de
+  jeton anti-CSRF, en-tête CSP absent, anti-clickjacking absent). Le garde-fou a été rejoué
+  dans le même souffle : la même autorisation refuse une cible hors périmètre, « rien n'a été
+  émis vers la cible ».
+- **Ce qui reste non prouvé, et doit le rester tant que personne ne l'a exercé** : le mode
+  **actif** (`--mode actif`) — il exige `actif_autorise: true` au mandat et n'a jamais été
+  lancé ; l'installation NATIVE de ZAP sur ce poste (le JRE réclame une élévation, la voie
+  Docker a été retenue) ; et le comportement sur une application réelle, riche et
+  authentifiée — la cible de preuve était une page statique.
 - **Aucun scan sans autorisation écrite.** `oracle-dast` refuse (`FAIL`, exit 1) toute cible
   qui n'est pas nommément déclarée dans un fichier d'autorisation daté et en cours de validité
   — la production exige en plus une autorisation distincte, et le mode actif une mention

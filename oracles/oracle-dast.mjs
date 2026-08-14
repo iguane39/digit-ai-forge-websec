@@ -45,6 +45,8 @@
 // Usage : node oracle-dast.mjs --cible <url> [--autorisation <f.json>] [--rapport <f.json>]
 //                              [--seuils <f.json>] [--mode passif|actif] [--json-only]
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const VERSION = "0.1.0";
@@ -117,8 +119,15 @@ if (!fs.existsSync(autorisationPath)) {
   add("bloquant", "DAST-AUTZ-ABSENTE", `fichier d'autorisation introuvable : ${autorisationPath}. Refus net — aucune autorisation implicite, aucun défaut permissif.`, autorisationPath);
   sortir("FAIL", 1);
 }
+// Un BOM en tête n'est PAS du contenu : sur Windows, tout fichier écrit par le défaut de
+// PowerShell (`Out-File -Encoding utf8`) en porte un, et `JSON.parse` le refuse. Constaté le
+// 14/08 en écrivant un vrai mandat : l'autorisation était rejetée pour un caractère invisible,
+// avec un message incompréhensible. Le retirer ne relâche RIEN — le reste du contrôle est
+// inchangé, et un JSON réellement invalide est toujours refusé net.
+const lireJson = (chemin) => JSON.parse(fs.readFileSync(chemin, "utf8").replace(/^﻿/, ""));
+
 let autz = null;
-try { autz = JSON.parse(fs.readFileSync(autorisationPath, "utf8")); }
+try { autz = lireJson(autorisationPath); }
 catch (e) {
   add("bloquant", "DAST-AUTZ-CHAMPS", `autorisation illisible (JSON invalide) : ${e.message}. Refus net.`, autorisationPath);
   sortir("FAIL", 1);
@@ -256,39 +265,82 @@ if (rapportPath) {
 // Windows, une commande inexistante sort en 1 avec un message sur stderr, indiscernable d'un
 // `-h` qui sort en 1 — sonder par exécution produirait un faux positif (défaut constaté puis
 // corrigé le 14/08/2026). `where` (win32) / `command -v` (posix) tranchent sans rien lancer.
+function resoluDansLePath(cmd) {
+  if (cmd.includes("/") || cmd.includes("\\")) return fs.existsSync(cmd);
+  const r = process.platform === "win32"
+    ? spawnSync("where", [cmd], { encoding: "utf8", timeout: 10000 })
+    : spawnSync("sh", ["-c", `command -v ${JSON.stringify(cmd)}`], { encoding: "utf8", timeout: 10000 });
+  return r.error === undefined && r.status === 0 && String(r.stdout || "").trim().length > 0;
+}
+
+// Voie DOCKER (14/08, TF-0206) : c'est la façon dont ZAP est réellement exécuté en chaîne
+// d'intégration, et sur un poste Windows c'est souvent la SEULE joignable — l'installation
+// native réclame un JRE, donc une élévation. L'image officielle porte `zap-baseline.py` ;
+// l'oracle ne la construit ni ne la télécharge JAMAIS : elle doit être déjà présente
+// (`docker pull ghcr.io/zaproxy/zaproxy:stable`), sans quoi un oracle « installerait » son
+// propre outillage à l'insu de l'appelant.
+const IMAGE_DEFAUT = "ghcr.io/zaproxy/zaproxy:stable";
+
+function imageDockerPresente(image) {
+  if (!resoluDansLePath("docker")) return false;
+  const r = spawnSync("docker", ["image", "inspect", image], { encoding: "utf8", timeout: 30000 });
+  return r.error === undefined && r.status === 0;
+}
+
 function resoudreZap() {
   const force = process.env.WEBSEC_DAST_ZAP;
   const candidats = force ? [force] : ["zap-baseline.py", "zap.sh", "zap.bat"];
   for (const cmd of candidats) {
     try {
-      if (cmd.includes("/") || cmd.includes("\\")) { if (fs.existsSync(cmd)) return cmd; continue; }
-      const r = process.platform === "win32"
-        ? spawnSync("where", [cmd], { encoding: "utf8", timeout: 10000 })
-        : spawnSync("sh", ["-c", `command -v ${JSON.stringify(cmd)}`], { encoding: "utf8", timeout: 10000 });
-      if (r.error === undefined && r.status === 0 && String(r.stdout || "").trim().length > 0) return cmd;
+      if (resoluDansLePath(cmd)) return { mode: "poste", cmd };
     } catch { /* candidat suivant */ }
   }
+  // `WEBSEC_DAST_ZAP` déclaré et injouable = un CHOIX de l'opérateur, pas une absence : on ne
+  // se rabat PAS sur Docker. Sans cette garde, un poste où l'image traîne aurait lancé un scan
+  // réel là où l'appelant avait explicitement désigné une autre commande — et le self-test,
+  // qui force cette variable sur un chemin injouable pour prouver le SKIP, aurait scanné pour
+  // de vrai. Garde posée le 14/08 en ajoutant la voie Docker.
+  if (force) return null;
+  const image = process.env.WEBSEC_DAST_IMAGE || IMAGE_DEFAUT;
+  if (imageDockerPresente(image)) return { mode: "docker", cmd: "docker", image };
   return null;
 }
 
-const zapCmd = resoudreZap();
-if (!zapCmd) {
-  const ou = process.env.WEBSEC_DAST_ZAP ? `commande déclarée dans WEBSEC_DAST_ZAP (« ${process.env.WEBSEC_DAST_ZAP} ») injouable` : "aucun de zap-baseline.py / zap.sh / zap.bat dans le PATH";
-  add("info", "DAST-SKIP", `OWASP ZAP absent de ce poste — ${ou}. Aucun scan lancé, aucun verdict rendu : SKIP motivé, jamais un PASS par défaut. Cet oracle n'installe jamais ZAP ; installer ZAP puis relancer, ou juger un rapport déjà produit avec --rapport <fichier.json>.`, origineCible);
+const zap = resoudreZap();
+if (!zap) {
+  const ou = process.env.WEBSEC_DAST_ZAP
+    ? `commande déclarée dans WEBSEC_DAST_ZAP (« ${process.env.WEBSEC_DAST_ZAP} ») injouable`
+    : "aucun de zap-baseline.py / zap.sh / zap.bat dans le PATH, et aucune image Docker ZAP présente";
+  add("info", "DAST-SKIP", `ZAP absent de ce poste — ${ou}. Aucun scan lancé, aucun verdict rendu : SKIP motivé, jamais un PASS par défaut. Cet oracle n'installe jamais ZAP ; installer ZAP (ou « docker pull ${IMAGE_DEFAUT} ») puis relancer, ou juger un rapport déjà produit avec --rapport <fichier.json>.`, origineCible);
   synthese.zap = { provenance: "aucune — ZAP introuvable sur le poste", rapport: null };
   sortir("SKIP", 2);
 }
 
-// ZAP présent : passe baseline (passive) contre la cible AUTORISÉE, rapport JSON en sortie.
-const sortieRapport = `${process.env.TEMP || process.env.TMPDIR || "."}/zap-rapport-${Date.now()}.json`;
-const argv = zapCmd.endsWith(".py")
-  ? ["-t", cible, "-J", sortieRapport, "-I"]
-  : ["-cmd", "-quickurl", cible, "-quickout", sortieRapport];
-const r = spawnSync(zapCmd, argv, { encoding: "utf8", timeout: 900000, shell: process.platform === "win32" });
+// ZAP présent : passe baseline (PASSIVE) contre la cible AUTORISÉE, rapport JSON en sortie.
+const horodatage = Date.now();
+const dossierTravail = fs.mkdtempSync(path.join(os.tmpdir(), `zap-${horodatage}-`));
+const nomRapport = "zap-rapport.json";
+const sortieRapport = path.join(dossierTravail, nomRapport);
+
+let argv;
+if (zap.mode === "docker") {
+  // `zap-baseline.py` écrit ses rapports dans /zap/wrk : on y monte un dossier de travail
+  // du poste, et le rapport en ressort par le montage. `--rm` : aucun conteneur ne survit.
+  argv = [
+    "run", "--rm", "-v", `${dossierTravail}:/zap/wrk:rw`, zap.image,
+    "zap-baseline.py", "-t", cible, "-J", nomRapport, "-I",
+  ];
+} else {
+  argv = zap.cmd.endsWith(".py")
+    ? ["-t", cible, "-J", sortieRapport, "-I"]
+    : ["-cmd", "-quickurl", cible, "-quickout", sortieRapport];
+}
+const commandeLisible = zap.mode === "docker" ? `docker run ${zap.image} zap-baseline.py` : zap.cmd;
+const r = spawnSync(zap.cmd, argv, { encoding: "utf8", timeout: 1800000, shell: false });
 if (!fs.existsSync(sortieRapport)) {
   const extrait = String(r.stderr || r.stdout || "").slice(0, 300).trim();
-  add("info", "DAST-SKIP", `ZAP (« ${zapCmd} ») lancé mais aucun rapport exploitable produit : ${extrait || "sortie vide"}. SKIP motivé — jamais un PASS faute de preuve.`, origineCible);
-  synthese.zap = { provenance: `exécution ${zapCmd} en échec`, rapport: null };
+  add("info", "DAST-SKIP", `ZAP (« ${commandeLisible} ») lancé mais aucun rapport exploitable produit : ${extrait || "sortie vide"}. SKIP motivé — jamais un PASS faute de preuve.`, origineCible);
+  synthese.zap = { provenance: `exécution ${commandeLisible} en échec`, rapport: null };
   sortir("SKIP", 2);
 }
-jugerRapport(sortieRapport, `exécution ${zapCmd} (mode ${mode}) sur cible autorisée`);
+jugerRapport(sortieRapport, `exécution ${commandeLisible} (mode ${mode}) sur cible autorisée`);
