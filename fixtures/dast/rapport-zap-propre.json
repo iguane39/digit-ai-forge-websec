@@ -1,0 +1,27 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens VERT : rapport ZAP au format JSON de zap-baseline.py, aucune alerte au-delà des seuils (une seule alerte informational). Cible fictive (exemple.tld, RFC 2606).",
+  "@programName": "ZAP",
+  "@version": "2.15.0",
+  "@generated": "Fri, 14 Aug 2026 09:00:00",
+  "site": [
+    {
+      "@name": "https://recette.exemple.tld",
+      "@host": "recette.exemple.tld",
+      "@port": "443",
+      "@ssl": "true",
+      "alerts": [
+        {
+          "pluginid": "10015",
+          "alertRef": "10015",
+          "alert": "Re-examine Cache-control Directives",
+          "name": "Re-examine Cache-control Directives",
+          "riskcode": "0",
+          "confidence": "1",
+          "riskdesc": "Informational (Low)",
+          "count": "1",
+          "instances": [{ "uri": "https://recette.exemple.tld/", "method": "GET" }]
+        }
+      ]
+    }
+  ]
+}

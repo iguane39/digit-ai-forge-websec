@@ -1,0 +1,11 @@
+{
+  "_fixture": "SYNTHÉTIQUE — aucune cible réelle, aucun mandat réel. Sert uniquement à prouver le SENS VERT du garde-fou dual-use d'oracle-dast (autorisation acceptée).",
+  "autorisation_ecrite": true,
+  "mandat": "TF-0187 — fixture de self-test, mandat fictif",
+  "proprietaire": "Exemple SAS (propriétaire fictif de exemple.tld, domaine réservé RFC 2606)",
+  "environnement": "recette",
+  "cibles": ["https://recette.exemple.tld"],
+  "fenetre": { "debut": "2026-01-01", "fin": "2099-12-31" },
+  "actif_autorise": false,
+  "note": "fenêtre volontairement très longue : une fixture qui expire ferait échouer le self-test pour une raison sans rapport avec la règle testée."
+}

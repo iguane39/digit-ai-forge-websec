@@ -1,0 +1,52 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens ROUGE : rapport ZAP portant 1 alerte high et 2 medium, au-delà des seuils par défaut (high=0, medium=0) → DAST-SEUIL. Cible fictive (exemple.tld, RFC 2606) ; aucun scan réel n'a produit ce fichier.",
+  "@programName": "ZAP",
+  "@version": "2.15.0",
+  "@generated": "Fri, 14 Aug 2026 09:00:00",
+  "site": [
+    {
+      "@name": "https://recette.exemple.tld",
+      "@host": "recette.exemple.tld",
+      "@port": "443",
+      "@ssl": "true",
+      "alerts": [
+        {
+          "pluginid": "40012",
+          "alertRef": "40012",
+          "alert": "Cross Site Scripting (Reflected)",
+          "name": "Cross Site Scripting (Reflected)",
+          "riskcode": "3",
+          "confidence": "2",
+          "riskdesc": "High (Medium)",
+          "count": "2",
+          "instances": [
+            { "uri": "https://recette.exemple.tld/recherche?q=marqueur", "method": "GET" },
+            { "uri": "https://recette.exemple.tld/recherche?q=marqueur2", "method": "GET" }
+          ]
+        },
+        {
+          "pluginid": "10038",
+          "alertRef": "10038",
+          "alert": "Content Security Policy (CSP) Header Not Set",
+          "name": "Content Security Policy (CSP) Header Not Set",
+          "riskcode": "2",
+          "confidence": "3",
+          "riskdesc": "Medium (High)",
+          "count": "3",
+          "instances": [{ "uri": "https://recette.exemple.tld/", "method": "GET" }]
+        },
+        {
+          "pluginid": "10021",
+          "alertRef": "10021",
+          "alert": "X-Content-Type-Options Header Missing",
+          "name": "X-Content-Type-Options Header Missing",
+          "riskcode": "2",
+          "confidence": "2",
+          "riskdesc": "Medium (Medium)",
+          "count": "1",
+          "instances": [{ "uri": "https://recette.exemple.tld/", "method": "GET" }]
+        }
+      ]
+    }
+  ]
+}

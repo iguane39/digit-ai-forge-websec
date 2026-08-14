@@ -1,0 +1,6 @@
+{
+  "_fixture": "SYNTHÉTIQUE — seuils volontairement desserrés, pour prouver que `--seuils` est réellement appliqué (le rapport rouge passe alors sous les seuils). Ne jamais utiliser tel quel sur un vrai produit.",
+  "high": 5,
+  "medium": 5,
+  "low": 20
+}

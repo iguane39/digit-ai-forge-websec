@@ -1,0 +1,7 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens ROUGE : autorisation amputée (autorisation_ecrite absente, proprietaire absent, fenetre.fin absente) → DAST-AUTZ-CHAMPS.",
+  "mandat": "TF-0187 — fixture de self-test, mandat fictif",
+  "environnement": "recette",
+  "cibles": ["https://recette.exemple.tld"],
+  "fenetre": { "debut": "2026-01-01" }
+}

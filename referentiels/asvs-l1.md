@@ -25,6 +25,10 @@ Business Logic, V4 API and Web Service, V5 File Handling, V7 Session Management,
 V8 Authorization, V9 Self-contained Tokens, V10 OAuth and OIDC, V11 Cryptography,
 V16 Security Logging and Error Handling, V17 WebRTC — non curés en v0, à élargir sur mandat.
 
+**Méthode de test associée.** Ce document dit *ce qu'on exige* ; `referentiels/wstg-cas.md`
+(WSTG 4.2 curé, 14/08/2026) dit *comment on le teste*, cas par cas, chaque cas rattaché à une
+exigence ci-dessous.
+
 **Colonne « Vérification »** : `oracle-exposition` | `oracle-sca` | `revue humaine` — jamais
 inventée, chaque valeur correspond à un contrôle réellement exécutable aujourd'hui ou à un
 constat honnête d'absence d'automatisation.
@@ -127,6 +131,9 @@ authentification, intégrité logicielle/data, journalisation, gestion des erreu
   vaut ni audit ASVS complet, ni certification — c'est un contrat de sécurité **v0**, sous-
   ensemble curé et partiellement automatisé.
 - **Pas un DAST.** Aucune de ces règles n'exploite activement l'application (fuzzing,
-  injection réelle) — ZAP est consigné en v1 (cf. `README.md §Limites`).
+  injection réelle). Depuis le 14/08/2026, `oracles/oracle-dast.mjs` enveloppe OWASP ZAP sous
+  garde-fou d'autorisation écrite, mais son exécution réelle n'est pas prouvée faute de ZAP
+  sur le poste (dette D-W1 requalifiée, cf. `README.md §Limites`). La **méthode** de test
+  correspondante est curée dans `referentiels/wstg-cas.md`.
 - **Pas un audit de code.** Les exigences V1/V6 marquées « revue humaine » nécessitent une
   lecture de code ou un test manuel — cet oracle ne les exécute pas.

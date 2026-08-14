@@ -1,0 +1,10 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens ROUGE : cible en production sans autorisation distincte (DAST-AUTZ-PROD).",
+  "autorisation_ecrite": true,
+  "mandat": "TF-0187 — fixture de self-test, mandat fictif",
+  "proprietaire": "Exemple SAS (propriétaire fictif)",
+  "environnement": "production",
+  "cibles": ["https://recette.exemple.tld"],
+  "fenetre": { "debut": "2026-01-01", "fin": "2099-12-31" },
+  "actif_autorise": false
+}
