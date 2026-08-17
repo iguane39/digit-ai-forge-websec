@@ -1,8 +1,8 @@
 # digit-ai-forge-websec
 
 Forge dédiée à la **sécurité du produit web livré**. Née du mandat TF-0123 (décision humaine
-du 12/08/2026, registre `digit-ai-forge-pilot/todo/TODO.jsonl`), verdict de l'étude
-d'opportunité du 12/08 (`digit-ai-forge-pilot/output/20260812-etude-opportunite-forges.md §1`).
+du 12/08/2026, registre `digit-ai-factory/todo/TODO.jsonl`), verdict de l'étude
+d'opportunité du 12/08 (`digit-ai-factory/output/20260812-etude-opportunite-forges.md §1`).
 Modèle : **forge-seo** — invocation sur mandat humain uniquement, jamais de déclenchement
 automatique ; pré-MEP en gate optionnel consommé par les oracles M-1…M-5 du pilot, post-MEP
 en mission récurrente à livrable différentiel.
@@ -22,7 +22,7 @@ en mission récurrente à livrable différentiel.
 | **Dérouler une méthode de test de sécurité** | savoir *comment* on teste une exigence ASVS, cas par cas | `referentiels\wstg-cas.md` (28 cas WSTG 4.2 curés, rattachés à `asvs-l1.md`) | déclaré (experimental) |
 
 Le catalogue consolidé des dix forges vit chez le pilot :
-[digit-ai-forge-pilot/catalogues/CATALOGUES.md](https://github.com/iguane39/digit-ai-forge-pilot/blob/main/catalogues/CATALOGUES.md).
+[digit-ai-factory/catalogues/CATALOGUES.md](https://github.com/iguane39/digit-ai-factory/blob/main/catalogues/CATALOGUES.md).
 
 ## Délimitation — websec vs agents-security
 
@@ -43,7 +43,7 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 
 - **Le juge ne vit pas chez le jugé.** `forge-development` construit le produit ; elle ne
   peut pas être son propre contrôle de sécurité runtime — d'où une forge séparée.
-- **Invocation sur mandat humain**, via le pilot (`digit-ai-forge-pilot`). Cette forge
+- **Invocation sur mandat humain**, via le pilot (`digit-ai-factory`). Cette forge
   n'audite jamais spontanément un dépôt ou une URL tiers.
 - **Elle outille, ne décide jamais.** Un verdict `FAIL` est un constat argumenté et localisé
   — jamais un blocage automatique d'une MEP, jamais une correction appliquée à la place d'un

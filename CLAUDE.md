@@ -3,7 +3,7 @@
 Forge de **sécurité du produit web livré** — juge le produit, pas l'outillage agentique qui
 l'a construit (`digit-ai-forge-agents-security`, délimitation croisée dans les deux README).
 Détail complet : `README.md`. Mandat d'origine : TF-0123
-(`digit-ai-forge-pilot/todo/TODO.jsonl`).
+(`digit-ai-factory/todo/TODO.jsonl`).
 
 ## Garde-fous
 
