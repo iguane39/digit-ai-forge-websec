@@ -2,7 +2,7 @@
 
 Forge dédiée à la **sécurité du produit web livré**. Née du mandat TF-0123 (décision humaine
 du 12/08/2026, registre `digit-ai-factory/todo/TODO.jsonl`), verdict de l'étude
-d'opportunité du 12/08 (`digit-ai-factory/output/20260812-etude-opportunite-forges.md §1`).
+d'opportunité du 12/08 (`digit-ai-factory/output/03-etudes/20260812-etude-opportunite-forges.md §1`).
 Modèle : **forge-seo** — invocation sur mandat humain uniquement, jamais de déclenchement
 automatique ; pré-MEP en gate optionnel consommé par les oracles M-1…M-5 du pilot, post-MEP
 en mission récurrente à livrable différentiel.
