@@ -1,0 +1,9 @@
+# Fixture ROUGE : les en-têtes de sécurité ne couvrent que /app/*. La racine /
+# ne reçoit aucun d'eux : EX-1, EX-3, EX-4, EX-5 et EX-6 y sont relevés.
+/app/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; frame-ancestors 'self'; object-src 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

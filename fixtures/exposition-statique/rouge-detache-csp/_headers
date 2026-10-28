@@ -1,0 +1,13 @@
+# Fixture ROUGE EX-1 par détachement : /* pose tous les en-têtes, puis
+# /telechargements/* retire la CSP par « ! Content-Security-Policy ».
+# La racine / reste couverte ; seule la sonde /telechargements/x perd la CSP.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; frame-ancestors 'self'; object-src 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+/telechargements/*
+  ! Content-Security-Policy

@@ -1,0 +1,10 @@
+# Fixture ROUGE EX-8 : la règle /* pose les en-têtes de
+# fixtures/exposition/rouge-cookie-insecure.json : un cookie sans Secure.
+/*
+  Content-Security-Policy: default-src 'self'; frame-ancestors 'self'
+  Strict-Transport-Security: max-age=63072000
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=()
+  Set-Cookie: session=abc123; HttpOnly; SameSite=Strict

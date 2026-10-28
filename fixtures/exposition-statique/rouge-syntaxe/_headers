@@ -1,0 +1,22 @@
+# Fixture ROUGE HD-1 : cinq défauts de la syntaxe documentée, autour d'une
+# règle /* valide qui garde les règles EX satisfaites sur toutes les sondes.
+  X-Orphelin: en-tête posé avant tout motif d'URL
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; frame-ancestors 'self'; object-src 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+http://exemple-forge-websec.test/*
+  X-Robots-Tag: noindex
+
+https://exemple-forge-websec.test:8443/*
+  X-Robots-Tag: noindex
+
+/*/fichiers/*
+  X-Robots-Tag: noindex
+
+/sans-deux-points
+  Ceci n'est pas un en-tête

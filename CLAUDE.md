@@ -42,6 +42,7 @@ node oracles/self-test.mjs                         # preuve intégrale
 node oracles/decouvrir-oracles.mjs                  # liste des oracles LUE SUR LE DISQUE (TF-1319, contrat du pilot)
 node scripts/capturer.mjs <url> --sortie c.json     # capture réelle
 node oracles/oracle-exposition.mjs c.json           # scan de l'exposition HTTP
+node oracles/oracle-exposition-statique.mjs <dossier>  # fichier _headers de Cloudflare, mêmes règles EX
 node oracles/oracle-sca.mjs <dossier-cible>          # scan des dépendances vulnérables
 node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json>   # DAST, sur périmètre autorisé
 node oracles/oracle-workflows.mjs <dépôt>            # durcissement des workflows GitHub Actions (WF-1..WF-5)

@@ -31,7 +31,7 @@ d'opportunité (§1b, catalogue v1.3.0) :
 
 | Forge | Juge | Ne juge PAS |
 |---|---|---|
-| **`digit-ai-forge-websec`** (ici) | le **PRODUIT web livré** : sa configuration de sécurité runtime (en-têtes HTTP, cookies), ses dépendances vulnérables, le durcissement des workflows GitHub Actions qui le livrent, sa conformité à un contrat ASVS curé | l'outillage agentique qui a construit le produit |
+| **`digit-ai-forge-websec`** (ici) | le **PRODUIT web livré** : sa configuration de sécurité runtime (en-têtes HTTP, cookies) et celle qu'en déclare un fichier `_headers`, ses dépendances vulnérables, le durcissement des workflows GitHub Actions qui le livrent, sa conformité à un contrat ASVS curé | l'outillage agentique qui a construit le produit |
 | [`digit-ai-forge-agents-security`](https://github.com/iguane39/digit-ai-forge-agents-security) | l'**OUTILLAGE agentique** : définitions d'agents, appels d'outils, capacités et permissions | le produit livré lui-même — aucune notion de HTTP, de dépendance npm/pip, ni d'ASVS |
 
 Un agent qui a construit un site peut être scanné sain par `agents-security` et livrer un
@@ -48,7 +48,7 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 - **Elle outille, ne décide jamais.** Un verdict `FAIL` est un constat argumenté et localisé
   — jamais un blocage automatique d'une MEP, jamais une correction appliquée à la place d'un
   humain.
-- **Zéro API tierce payante, zéro dépendance npm.** Quatre oracles + un script de capture,
+- **Zéro API tierce payante, zéro dépendance npm.** Cinq oracles + un script de capture,
   Node natif (`.mjs`), aucune installation requise pour la partie propre à cette forge.
   `oracle-sca` et `oracle-dast` **délèguent** à l'outillage déjà présent sur le poste (npm,
   pip-audit, OWASP ZAP) — ils ne l'installent jamais et ne dégradent jamais silencieusement
@@ -65,10 +65,11 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 |---|---|---|---|
 | **Juger l'exposition HTTP d'une réponse** | connaître la configuration de sécurité (en-têtes, cookies) d'un produit avant sa MEP | `node oracles/oracle-exposition.mjs <capture.json>` | **prouvé** — 15 fixtures (`fixtures/exposition/`), 11 règles EX-1..EX-11 |
 | **Capturer une réponse HTTP réelle** | produire l'entrée de l'oracle d'exposition depuis une URL réelle | `node scripts/capturer.mjs <url> [--sortie <fichier>]` | **prouvé** (fetch natif, zéro dépendance) — ne juge rien, capture seulement |
+| **Juger un fichier `_headers`** | savoir, avant de déployer sur Cloudflare (Workers static assets ou Pages), si les en-têtes que déclare mon `_headers` tiennent les règles EX | `node oracles/oracle-exposition-statique.mjs <_headers \| dossier>` | **prouvé** — règles EX-1..EX-11 réutilisées sans copie, HD-1 et HD-2 sourcées sur developers.cloudflare.com (lu le 28/10/2026), 8 fixtures (`fixtures/exposition-statique/`) |
 | **Juger les dépendances vulnérables** | savoir si les dépendances d'un produit portent des CVE connues | `node oracles/oracle-sca.mjs <dossier-cible>` | **prouvé** — npm (`npm audit`) et pip (`pip-audit`) enveloppés, fixtures vertes/rouges par écosystème, SKIP motivé si l'outillage ou le réseau manque |
 | **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | **partiellement prouvé** — garde-fou dual-use et lecture de rapport ZAP prouvés (13 fixtures, `fixtures/dast/`) ; **branche d'exécution ZAP non prouvée** faute de ZAP sur le poste (SKIP motivé) |
 | **Juger les workflows GitHub Actions** | savoir si les workflows qui construisent et livrent mon produit donnent trop de droits, exécutent du code non épinglé ou injectable | `node oracles/oracle-workflows.mjs <dépôt \| dossier \| fichier.yml>` | **prouvé** — 5 règles WF-1..WF-5 sourcées sur docs.github.com (lu le 28/10/2026), 15 fichiers de fixtures (`fixtures/workflows/`), lecteur YAML natif identique à PyYAML sur 30 fichiers le 28/10/2026 |
-| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 61 PASS, 0 FAIL à la dernière exécution connue (28/10/2026), dont le volet SCA dépendant de l'outillage réel du poste |
+| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 77 PASS, 0 FAIL à la dernière exécution connue (28/10/2026), dont le volet SCA dépendant de l'outillage réel du poste |
 
 ### `oracle-exposition.mjs` — 11 règles EX-1..EX-11
 
@@ -90,6 +91,36 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 node scripts/capturer.mjs https://exemple.tld --sortie capture.json
 node oracles/oracle-exposition.mjs capture.json
 ```
+
+Les onze règles sont exportées par la fonction `jugerEnTetes(enTetes, { https })` (version 0.2.0) :
+la lecture statique d'un fichier `_headers` les applique sans en recopier la logique.
+
+### `oracle-exposition-statique.mjs` — un fichier `_headers` jugé par les règles EX (TF-1996)
+
+Juge le fichier `_headers` de Cloudflare (Workers static assets ou Pages) avant tout déploiement.
+Pour chaque requête sondée, il calcule les en-têtes que le fichier lui applique, puis les passe à
+`jugerEnTetes` : ce sont les règles EX-1..EX-11 ci-dessus, aucune n'est réécrite. Les sondes sont
+la racine `/` et un représentant de chaque motif valide (`*` et `:nom` remplacés par `x`).
+
+| Règle | Détecte | Sévérité | Page qui la fonde |
+|---|---|---|---|
+| EX-1..EX-11 | Les défauts d'en-têtes ci-dessus, sur les en-têtes que reçoit chaque sonde ; le constat nomme ses sondes | celles d'`oracle-exposition` | — |
+| HD-1 | En-tête posé hors de toute règle ; ligne sans `nom: valeur` ; motif qui ne commence ni par `/` ni par `https://` ; port ; plus d'un `*` | majeur | `workers/static-assets/headers/`, `pages/configuration/headers/` |
+| HD-2 | Plus de 100 règles ; ligne de plus de 2 000 caractères | majeur | idem |
+
+Calcul des en-têtes d'une sonde, d'après les pages lues le 28/10/2026 : toutes les règles dont le
+motif correspond s'appliquent, une valeur posée deux fois est jointe par une virgule, et `! Nom`
+retire l'en-tête. La preuve de la réutilisation est une équivalence jouée par la recette : un
+`_headers` qui pose les en-têtes d'une capture lève exactement les règles de cette capture.
+
+```
+node oracles/oracle-exposition-statique.mjs <fichier _headers | dossier qui le contient>
+```
+
+Ce que la lecture ne voit pas est déclaré dans `non_juge`. Au premier rang : les en-têtes posés
+par le code d'un Worker ou par Pages Functions, auxquels `_headers` ne s'applique pas, et la HSTS
+réglée au niveau de la zone. Le site déployé se confirme par `capturer.mjs` puis
+`oracle-exposition`.
 
 ### `oracle-sca.mjs` — deux écosystèmes enveloppés
 
@@ -181,7 +212,8 @@ les permissions par défaut réglées hors fichier.
 Exit `0` = PASS, `1` = FAIL, `2` = SKIP. `oracle-sca` et `oracle-dast` ajoutent `synthese`
 (compteurs) et `seuils_appliques` (source + valeurs). `oracle-workflows` ajoute `synthese`
 (fichiers lus et jugés, jobs, étapes, constats par règle) et `sources[]` (`url`, `lu_le`), et
-chacun de ses constats porte `source`. Pour `oracle-dast` : `FAIL` couvre aussi
+chacun de ses constats porte `source`. `oracle-exposition-statique` ajoute `sondes` (en-têtes
+calculés par sonde), `synthese` et `sources[]`. Pour `oracle-dast` : `FAIL` couvre aussi
 le **refus du garde-fou** (rien n'a été émis) et `SKIP` les deux cas où rien n'a pu être jugé
 — aucune cible fournie, ou ZAP absent du poste.
 
@@ -211,8 +243,9 @@ curés**, listés explicitement dans le fichier — leur chapitre ASVS n'est pas
 node oracles/self-test.mjs
 ```
 
-`oracle-exposition` (15 fixtures), `oracle-workflows` (15 fichiers de fixtures, 19 contrôles) et le
-volet garde-fou/rapport d'`oracle-dast` (13 cas) sont **entièrement déterministes** — zéro réseau, zéro dépendance de poste, et **aucun scan n'est
+`oracle-exposition` (15 fixtures), `oracle-exposition-statique` (8 fixtures, 16 contrôles),
+`oracle-workflows` (15 fichiers de fixtures, 19 contrôles) et le volet garde-fou/rapport
+d'`oracle-dast` (13 cas) sont **entièrement déterministes** — zéro réseau, zéro dépendance de poste, et **aucun scan n'est
 lancé par le self-test**, fût-il autorisé (les cas d'exécution forcent `WEBSEC_DAST_ZAP` sur un
 chemin injouable). Le volet `oracle-sca` dépend de l'outillage **réellement présent** sur
 le poste qui exécute le self-test (npm, pip-audit) et de l'accès réseau à leurs bases
@@ -253,6 +286,10 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
   permissions par défaut du jeton réglées dans le dépôt ou l'organisation, ni les politiques
   Actions. Il ne suit pas les actions composites, les images `docker://` ni les dépendances
   transitives. Sa liste de contextes non fiables est celle que la page donne comme « typique ».
+- **`oracle-exposition-statique` lit une déclaration, pas une réponse.** Les en-têtes posés par le
+  code d'un Worker, par Pages Functions, par une règle de transformation ou par la zone (HSTS du
+  certificat de bordure) lui échappent, comme ceux que Cloudflare ajoute de lui-même. Il ne sonde
+  que la racine et un représentant par motif, et suppose une réponse servie en HTTPS.
 - **`oracle-exposition` ne juge pas la couche TLS.** Version de protocole, suites de
   chiffrement, validité et chaîne du certificat sont hors périmètre — v0 juge la réponse
   applicative capturée par un `fetch`, pas une négociation TLS.
@@ -271,11 +308,12 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
 
 ```
 oracles/
-  oracle-exposition.mjs   juge une capture HTTP {url,status,headers} — 11 règles EX-1..EX-11
+  oracle-exposition.mjs   juge une capture HTTP {url,status,headers} — 11 règles EX-1..EX-11 (exportées)
+  oracle-exposition-statique.mjs  juge un fichier _headers de Cloudflare — règles EX réutilisées, HD-1, HD-2
   oracle-sca.mjs          enveloppe npm audit / pip-audit en verdict machine normalisé
   oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils
   oracle-workflows.mjs    juge les workflows GitHub Actions — 5 règles WF-1..WF-5, lecteur YAML natif
-  self-test.mjs           rejeu intégral à double sens (61 contrôles)
+  self-test.mjs           rejeu intégral à double sens (77 contrôles)
 scripts/
   capturer.mjs            capture réelle fetch(url) → JSON d'entrée d'oracle-exposition
 referentiels/
@@ -283,6 +321,7 @@ referentiels/
   wstg-cas.md             méthode de test, 28 cas curés WSTG 4.2 rattachés à asvs-l1.md
 fixtures/
   exposition/             15 fixtures JSON (vertes + rouges) pour oracle-exposition
+  exposition-statique/    8 fichiers _headers synthétiques : 1 vert, 7 rouges (EX par sonde, HD-1, HD-2)
   sca/                    manifestes npm/pip synthétiques (vulnérables + propres) + cas SKIP
   dast/                   autorisations synthétiques (valide/expirée/production/incomplète),
                           rapports ZAP synthétiques (propre/vulnérable), seuils desserrés

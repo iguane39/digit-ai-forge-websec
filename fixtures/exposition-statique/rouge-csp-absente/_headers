@@ -1,0 +1,9 @@
+# Fixture ROUGE EX-1 : la règle /* pose les en-têtes de
+# fixtures/exposition/rouge-csp-absente.json, sans Content-Security-Policy.
+# Indentation par tabulation, comme dans le premier exemple de la page.
+/*
+	Strict-Transport-Security: max-age=63072000
+	X-Content-Type-Options: nosniff
+	X-Frame-Options: DENY
+	Referrer-Policy: strict-origin-when-cross-origin
+	Permissions-Policy: camera=()

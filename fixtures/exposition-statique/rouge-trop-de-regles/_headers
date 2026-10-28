@@ -1,0 +1,208 @@
+# Fixture ROUGE HD-2 : 101 règles, une de plus que les 100 admises par la page.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; frame-ancestors 'self'; object-src 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+/page-1
+  X-Robots-Tag: noindex
+/page-2
+  X-Robots-Tag: noindex
+/page-3
+  X-Robots-Tag: noindex
+/page-4
+  X-Robots-Tag: noindex
+/page-5
+  X-Robots-Tag: noindex
+/page-6
+  X-Robots-Tag: noindex
+/page-7
+  X-Robots-Tag: noindex
+/page-8
+  X-Robots-Tag: noindex
+/page-9
+  X-Robots-Tag: noindex
+/page-10
+  X-Robots-Tag: noindex
+/page-11
+  X-Robots-Tag: noindex
+/page-12
+  X-Robots-Tag: noindex
+/page-13
+  X-Robots-Tag: noindex
+/page-14
+  X-Robots-Tag: noindex
+/page-15
+  X-Robots-Tag: noindex
+/page-16
+  X-Robots-Tag: noindex
+/page-17
+  X-Robots-Tag: noindex
+/page-18
+  X-Robots-Tag: noindex
+/page-19
+  X-Robots-Tag: noindex
+/page-20
+  X-Robots-Tag: noindex
+/page-21
+  X-Robots-Tag: noindex
+/page-22
+  X-Robots-Tag: noindex
+/page-23
+  X-Robots-Tag: noindex
+/page-24
+  X-Robots-Tag: noindex
+/page-25
+  X-Robots-Tag: noindex
+/page-26
+  X-Robots-Tag: noindex
+/page-27
+  X-Robots-Tag: noindex
+/page-28
+  X-Robots-Tag: noindex
+/page-29
+  X-Robots-Tag: noindex
+/page-30
+  X-Robots-Tag: noindex
+/page-31
+  X-Robots-Tag: noindex
+/page-32
+  X-Robots-Tag: noindex
+/page-33
+  X-Robots-Tag: noindex
+/page-34
+  X-Robots-Tag: noindex
+/page-35
+  X-Robots-Tag: noindex
+/page-36
+  X-Robots-Tag: noindex
+/page-37
+  X-Robots-Tag: noindex
+/page-38
+  X-Robots-Tag: noindex
+/page-39
+  X-Robots-Tag: noindex
+/page-40
+  X-Robots-Tag: noindex
+/page-41
+  X-Robots-Tag: noindex
+/page-42
+  X-Robots-Tag: noindex
+/page-43
+  X-Robots-Tag: noindex
+/page-44
+  X-Robots-Tag: noindex
+/page-45
+  X-Robots-Tag: noindex
+/page-46
+  X-Robots-Tag: noindex
+/page-47
+  X-Robots-Tag: noindex
+/page-48
+  X-Robots-Tag: noindex
+/page-49
+  X-Robots-Tag: noindex
+/page-50
+  X-Robots-Tag: noindex
+/page-51
+  X-Robots-Tag: noindex
+/page-52
+  X-Robots-Tag: noindex
+/page-53
+  X-Robots-Tag: noindex
+/page-54
+  X-Robots-Tag: noindex
+/page-55
+  X-Robots-Tag: noindex
+/page-56
+  X-Robots-Tag: noindex
+/page-57
+  X-Robots-Tag: noindex
+/page-58
+  X-Robots-Tag: noindex
+/page-59
+  X-Robots-Tag: noindex
+/page-60
+  X-Robots-Tag: noindex
+/page-61
+  X-Robots-Tag: noindex
+/page-62
+  X-Robots-Tag: noindex
+/page-63
+  X-Robots-Tag: noindex
+/page-64
+  X-Robots-Tag: noindex
+/page-65
+  X-Robots-Tag: noindex
+/page-66
+  X-Robots-Tag: noindex
+/page-67
+  X-Robots-Tag: noindex
+/page-68
+  X-Robots-Tag: noindex
+/page-69
+  X-Robots-Tag: noindex
+/page-70
+  X-Robots-Tag: noindex
+/page-71
+  X-Robots-Tag: noindex
+/page-72
+  X-Robots-Tag: noindex
+/page-73
+  X-Robots-Tag: noindex
+/page-74
+  X-Robots-Tag: noindex
+/page-75
+  X-Robots-Tag: noindex
+/page-76
+  X-Robots-Tag: noindex
+/page-77
+  X-Robots-Tag: noindex
+/page-78
+  X-Robots-Tag: noindex
+/page-79
+  X-Robots-Tag: noindex
+/page-80
+  X-Robots-Tag: noindex
+/page-81
+  X-Robots-Tag: noindex
+/page-82
+  X-Robots-Tag: noindex
+/page-83
+  X-Robots-Tag: noindex
+/page-84
+  X-Robots-Tag: noindex
+/page-85
+  X-Robots-Tag: noindex
+/page-86
+  X-Robots-Tag: noindex
+/page-87
+  X-Robots-Tag: noindex
+/page-88
+  X-Robots-Tag: noindex
+/page-89
+  X-Robots-Tag: noindex
+/page-90
+  X-Robots-Tag: noindex
+/page-91
+  X-Robots-Tag: noindex
+/page-92
+  X-Robots-Tag: noindex
+/page-93
+  X-Robots-Tag: noindex
+/page-94
+  X-Robots-Tag: noindex
+/page-95
+  X-Robots-Tag: noindex
+/page-96
+  X-Robots-Tag: noindex
+/page-97
+  X-Robots-Tag: noindex
+/page-98
+  X-Robots-Tag: noindex
+/page-99
+  X-Robots-Tag: noindex
+/page-100
+  X-Robots-Tag: noindex

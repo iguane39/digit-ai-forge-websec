@@ -1,0 +1,13 @@
+# Fixture VERTE d'oracle-exposition-statique : la règle /* pose les en-têtes de
+# fixtures/exposition/vert-complet.json ; /static/* n'ajoute qu'une règle de cache.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; frame-ancestors 'self'; object-src 'none'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Set-Cookie: session=abc123; Secure; HttpOnly; SameSite=Strict
+
+/static/*
+  Cache-Control: public, max-age=31556952, immutable

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// self-test.mjs — preuve par le geste (double sens) : rejoue TOUTES les fixtures des quatre
+// self-test.mjs — preuve par le geste (double sens) : rejoue TOUTES les fixtures des cinq
 // oracles et vérifie que chaque verte PASSE (ou, pour la SCA dépendante du poste, que le
 // silence est un SKIP motivé et jamais un PASS non prouvé) et que chaque rouge ÉCHOUE pour
 // la bonne raison (code `regle` vérifié dans les findings, pas juste un verdict générique).
@@ -7,6 +7,8 @@
 // oracle-exposition : intégralement déterministe, zéro dépendance externe, zéro réseau —
 // les 15 fixtures locales sont rejouées à l'identique à chaque exécution.
 // oracle-workflows : déterministe aussi — des workflows YAML synthétiques lus, jamais exécutés.
+// oracle-exposition-statique : déterministe — des fichiers _headers synthétiques, jugés par les
+// règles EX d'oracle-exposition.
 // oracle-sca : dépend de l'outillage RÉELLEMENT présent sur le poste (npm, pip-audit) et,
 // pour npm/pip-audit, d'un accès réseau à leur base d'avisos. Le sens rouge n'est démontré
 // que si l'outil est disponible ET répond — sinon SKIP motivé consigné (jamais compté comme
@@ -282,6 +284,73 @@ console.log("\nSELF-TEST forge-websec — oracle-workflows (statique, détermini
   {
     const r = runJson(ORACLE_WORKFLOWS, [FX("sca", "aucun-manifeste")]);
     ok(r.verdict === "SKIP", `dossier sans aucun workflow → SKIP motivé, jamais un PASS silencieux (obtenu ${r.verdict})`);
+  }
+}
+
+// ── TF-1996 · oracle-exposition-statique : un fichier _headers jugé par les règles EX-1..EX-11 ──
+// La lecture statique d'un _headers (Cloudflare Workers static assets ou Pages) ne réécrit aucune
+// règle d'en-tête : elle calcule les en-têtes que chaque requête sondée recevrait, puis les passe à
+// jugerEnTetes d'oracle-exposition. La réutilisation se prouve par l'équivalence : un _headers qui
+// pose les en-têtes d'une capture lève exactement les règles que lève la capture.
+console.log("\nSELF-TEST forge-websec — oracle-exposition-statique (fichier _headers, règles EX-1..EX-11 réutilisées)\n");
+{
+  const ORACLE_STATIQUE = path.join(HERE, "oracle-exposition-statique.mjs");
+  const HX = (...p) => FX("exposition-statique", ...p);
+  const DURS = new Set(["bloquant", "majeur"]);
+  const reglesDures = (r) => [...new Set((r.findings || []).filter((f) => DURS.has(f.sev)).map((f) => f.regle))].sort();
+  const cas = [
+    // [dossier, verdict attendu, règle exigée, règles dures admises, libellé]
+    ["vert-complet", "PASS", null, [], "en-têtes de la capture verte sur /*, règle de cache sur /static/*"],
+    ["rouge-csp-absente", "FAIL", "EX-1", ["EX-1"], "CSP absente de la règle /*, indentation par tabulation"],
+    ["rouge-cookie-insecure", "FAIL", "EX-8", ["EX-8"], "Set-Cookie sans Secure"],
+    ["rouge-detache-csp", "FAIL", "EX-1", ["EX-1"], "CSP retirée par « ! Content-Security-Policy » sous /telechargements/*"],
+    ["rouge-racine-nue", "FAIL", "EX-1", ["EX-1", "EX-3", "EX-4", "EX-5", "EX-6"], "aucune règle ne couvre la racine /"],
+    ["rouge-syntaxe", "FAIL", "HD-1", ["HD-1"], "en-tête hors règle, URL en http, port, deux astérisques, ligne sans « : »"],
+    ["rouge-trop-de-regles", "FAIL", "HD-2", ["HD-2"], "101 règles pour 100 admises"],
+    ["rouge-ligne-trop-longue", "FAIL", "HD-2", ["HD-2"], "ligne de plus de 2 000 caractères"],
+  ];
+  for (const [dossier, verdictAttendu, regle, admises, libelle] of cas) {
+    const r = runJson(ORACLE_STATIQUE, [HX(dossier)]);
+    const dures = reglesDures(r);
+    const bon = r.verdict === verdictAttendu && (regle === null
+      ? !(r.findings || []).some((f) => f.sev !== "info")
+      : aRegle(r, regle) && dures.every((x) => admises.includes(x)));
+    ok(bon, `${dossier}/_headers (${libelle}) → ${verdictAttendu}${regle ? ` avec ${regle}, rien hors de ${admises.join(", ")}` : " sans aucun constat"} (obtenu ${r.verdict} : ${dures.join(", ") || "rien de dur"})`);
+  }
+  // Réutilisation sans duplication : mêmes en-têtes, mêmes règles levées par les deux oracles.
+  const leves = (r) => [...new Set((r.findings || []).filter((f) => f.sev !== "info").map((f) => `${f.sev}:${f.regle}`))].sort().join(" ");
+  for (const [capture, dossier] of [["vert-complet.json", "vert-complet"], ["rouge-csp-absente.json", "rouge-csp-absente"], ["rouge-cookie-insecure.json", "rouge-cookie-insecure"]]) {
+    const a = runJson(ORACLE_EXPOSITION, [FX("exposition", capture)]);
+    const b = runJson(ORACLE_STATIQUE, [HX(dossier)]);
+    ok(a.verdict === b.verdict && leves(a) === leves(b),
+      `réutilisation · ${capture} et ${dossier}/_headers portent les mêmes en-têtes → mêmes règles levées par oracle-exposition et par la lecture statique (« ${leves(a) || "aucune"} » / « ${leves(b) || "aucune"} »)`);
+  }
+  {
+    const r = runJson(ORACLE_STATIQUE, [HX("rouge-detache-csp")]);
+    const ex1 = (r.findings || []).filter((f) => f.regle === "EX-1");
+    ok(ex1.length === 1 && Array.isArray(ex1[0].sondes) && ex1[0].sondes.includes("/telechargements/x") && !ex1[0].sondes.includes("/"),
+      `détachement · la CSP retirée sous /telechargements/* ne manque qu'à cette sonde, la racine / la garde (sondes en EX-1 : ${ex1[0]?.sondes?.join(", ") ?? "aucune"})`);
+  }
+  {
+    const r = runJson(ORACLE_STATIQUE, [HX("rouge-racine-nue")]);
+    const ex1 = (r.findings || []).filter((f) => f.regle === "EX-1");
+    ok(ex1.length === 1 && Array.isArray(ex1[0].sondes) && ex1[0].sondes.includes("/") && !ex1[0].sondes.includes("/app/x"),
+      `sonde racine · une règle limitée à /app/* laisse la racine / sans en-tête, /app/x reste couvert (sondes en EX-1 : ${ex1[0]?.sondes?.join(", ") ?? "aucune"})`);
+  }
+  {
+    const r = runJson(ORACLE_STATIQUE, [HX("rouge-syntaxe")]);
+    const hd1 = (r.findings || []).filter((f) => f.regle === "HD-1");
+    const sources = (r.findings || []).filter((f) => /^HD-/.test(f.regle)).every((f) => /^https:\/\/developers\.cloudflare\.com\//.test(f.source || ""));
+    ok(hd1.length === 5 && sources && (r.sources || []).length === 2 && r.sources.every((s) => s.lu_le === "2026-10-28"),
+      `HD-1 · les 5 défauts de syntaxe sont relevés un par un, chacun avec sa page developers.cloudflare.com, les 2 pages lues datées (${hd1.length} relevés)`);
+  }
+  {
+    const r = runJson(ORACLE_STATIQUE, [HX("n-existe-pas")]);
+    ok(r.verdict === "SKIP", `cible introuvable → SKIP (obtenu ${r.verdict})`);
+  }
+  {
+    const r = runJson(ORACLE_STATIQUE, [FX("sca", "aucun-manifeste")]);
+    ok(r.verdict === "SKIP", `dossier sans fichier _headers → SKIP motivé, jamais un PASS silencieux (obtenu ${r.verdict})`);
   }
 }
 
