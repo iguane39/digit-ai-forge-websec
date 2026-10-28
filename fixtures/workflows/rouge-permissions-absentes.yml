@@ -1,0 +1,10 @@
+# Fixture ROUGE WF-1 : aucune clé permissions, ni au workflow ni au job.
+# Le GITHUB_TOKEN du job reçoit alors les permissions par défaut du dépôt.
+name: permissions absentes
+on: [push]
+jobs:
+  construire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - run: echo "construction"

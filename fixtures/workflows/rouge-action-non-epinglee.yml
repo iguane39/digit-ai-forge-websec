@@ -1,0 +1,13 @@
+# Fixture ROUGE WF-2 : action tierce référencée par une étiquette, que son
+# mainteneur peut déplacer, au lieu d'un SHA complet.
+name: action tierce non épinglée
+on:
+  push:
+permissions:
+  contents: read
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - uses: exemple-org/outil-tiers@v2

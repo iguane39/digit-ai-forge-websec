@@ -1,0 +1,15 @@
+# Fixture ROUGE WF-3 : déclencheur pull_request_target, sans checkout du code
+# de la pull request. La politique par défaut de GitHub le bloquera dans les
+# dépôts publics.
+name: étiquetage des pull requests
+on:
+  pull_request_target:
+    types: [opened]
+jobs:
+  etiqueter:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - run: echo "étiquetage sans checkout du code de la pull request"

@@ -1,0 +1,11 @@
+# Fixture : dépôt fictif qui a adopté le fichier de verrouillage des dépendances.
+# Ce workflow y est inscrit : sa référence par étiquette est couverte par le verrou.
+name: intégration verrouillée
+on: push
+permissions:
+  contents: read
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: exemple-org/outil-tiers@v3.1.0

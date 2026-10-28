@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// self-test.mjs — preuve par le geste (double sens) : rejoue TOUTES les fixtures des trois
+// self-test.mjs — preuve par le geste (double sens) : rejoue TOUTES les fixtures des quatre
 // oracles et vérifie que chaque verte PASSE (ou, pour la SCA dépendante du poste, que le
 // silence est un SKIP motivé et jamais un PASS non prouvé) et que chaque rouge ÉCHOUE pour
 // la bonne raison (code `regle` vérifié dans les findings, pas juste un verdict générique).
 //
 // oracle-exposition : intégralement déterministe, zéro dépendance externe, zéro réseau —
 // les 15 fixtures locales sont rejouées à l'identique à chaque exécution.
+// oracle-workflows : déterministe aussi — des workflows YAML synthétiques lus, jamais exécutés.
 // oracle-sca : dépend de l'outillage RÉELLEMENT présent sur le poste (npm, pip-audit) et,
 // pour npm/pip-audit, d'un accès réseau à leur base d'avisos. Le sens rouge n'est démontré
 // que si l'outil est disponible ET répond — sinon SKIP motivé consigné (jamais compté comme
@@ -198,6 +199,90 @@ function runDast(args, env) {
 {
   const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", FX("exposition", "vert-complet.json")]);
   ok(r.verdict === "FAIL" && aRegle(r, "DAST-RAPPORT"), `--rapport pointant un JSON qui n'est pas un rapport ZAP → FAIL, jamais un PASS silencieux (obtenu ${r.verdict})`);
+}
+
+// ── TF-2001 · oracle-workflows : durcissement des workflows GitHub Actions, WF-1..WF-5 ────────
+// Déterministe : lecture de fichiers YAML synthétiques, aucun réseau, rien d'exécuté. Chaque rouge
+// doit lever SA règle et aucune autre règle dure, pour prouver qu'elle échoue pour la bonne raison.
+console.log("\nSELF-TEST forge-websec — oracle-workflows (statique, déterministe, WF-1..WF-5)\n");
+{
+  const ORACLE_WORKFLOWS = path.join(HERE, "oracle-workflows.mjs");
+  const WFX = (...p) => FX("workflows", ...p);
+  const DURS = new Set(["bloquant", "majeur"]);
+  const durs = (r) => (r.findings || []).filter((f) => DURS.has(f.sev));
+  const casWorkflows = [
+    ["vert-complet.yml", "PASS", null, "permissions minimales, SHA complets, variable intermédiaire, OIDC"],
+    ["vert-id-token-au-workflow.yml", "PASS", null, "id-token: write hérité du workflow, qui n'est pas une écriture"],
+    ["rouge-permissions-absentes.yml", "FAIL", "WF-1", "aucune clé permissions"],
+    ["rouge-permissions-write-all.yml", "FAIL", "WF-1", "permissions: write-all"],
+    ["rouge-action-non-epinglee.yml", "FAIL", "WF-2", "action tierce épinglée par étiquette"],
+    ["rouge-pull-request-target.yml", "FAIL", "WF-3", "déclencheur pull_request_target"],
+    ["rouge-pull-request-target-checkout.yml", "FAIL", "WF-3", "checkout de la tête de la pull request"],
+    ["rouge-injection-run.yml", "FAIL", "WF-4", "titre d'issue substitué dans run"],
+    ["rouge-injection-env.yml", "FAIL", "WF-4", "corps de commentaire substitué par env.CORPS"],
+    ["rouge-secret-long.yml", "FAIL", "WF-5", "jeton PyPI en secret, sans id-token: write"],
+    ["rouge-illisible.yml", "FAIL", "—", "chaîne jamais fermée : fichier non jugé"],
+  ];
+  for (const [fichier, verdictAttendu, regle, libelle] of casWorkflows) {
+    const r = runJson(ORACLE_WORKFLOWS, [WFX(fichier)]);
+    const bon = r.verdict === verdictAttendu && (regle === null
+      ? !(r.findings || []).some((f) => f.sev !== "info")
+      : aRegle(r, regle) && durs(r).every((f) => f.regle === regle));
+    ok(bon, `${fichier} (${libelle}) → ${verdictAttendu}${regle ? ` avec ${regle} et aucune autre règle dure` : " sans aucun constat"} (obtenu ${r.verdict} : ${[...new Set((r.findings || []).filter((f) => f.sev !== "info").map((f) => f.regle))].join(", ") || "rien"})`);
+  }
+  {
+    const r = runJson(ORACLE_WORKFLOWS, [WFX("rouge-pull-request-target-checkout.yml")]);
+    ok((r.findings || []).some((f) => f.regle === "WF-3" && f.sev === "bloquant"),
+      `WF-3 · le checkout de la tête de la pull request sous pull_request_target est relevé en BLOQUANT (forme « pwn request »), pas seulement le déclencheur (obtenu ${r.verdict})`);
+  }
+  {
+    const r = runJson(ORACLE_WORKFLOWS, [WFX("rouge-action-non-epinglee.yml")]);
+    ok((r.findings || []).some((f) => f.regle === "WF-2" && f.sev === "majeur" && /exemple-org\/outil-tiers@v2/.test(f.msg)),
+      "WF-2 · l'action tierce non épinglée est nommée dans le constat, en sévérité majeure");
+  }
+  {
+    // Sévérité MINEURE par doctrine, comme EX-7 : l'action d'une organisation de GitHub épinglée par
+    // étiquette est relevée sans faire échouer le verdict (la page n'admet l'étiquette que si l'on fait
+    // confiance au créateur, et l'oracle ne présume cette confiance que pour GitHub lui-même).
+    const r = runJson(ORACLE_WORKFLOWS, [WFX("mineur-action-github-etiquette.yml")]);
+    ok(r.verdict === "PASS" && (r.findings || []).some((f) => f.regle === "WF-2" && f.sev === "mineur"),
+      `mineur-action-github-etiquette.yml (actions/checkout@v6) → règle WF-2 relevée en mineur, verdict PASS par doctrine (obtenu ${r.verdict})`);
+  }
+  {
+    // Dépôt entier : l'oracle trouve .github/workflows, lit le verrou, et départage les deux workflows.
+    const r = runJson(ORACLE_WORKFLOWS, [WFX("depot-verrouille")]);
+    const wf2 = durs(r).filter((f) => f.regle === "WF-2");
+    ok(r.verdict === "FAIL" && r.synthese?.fichiers_juges === 2 && wf2.length === 1 && /hors-verrou\.yml/.test(wf2[0].where),
+      `dépôt avec actions.lock → seul le workflow NON inscrit au verrou lève WF-2 (obtenu ${r.verdict}, ${wf2.length} WF-2 dur, ${r.synthese?.fichiers_juges ?? "?"} fichiers jugés)`);
+  }
+  {
+    const r = runJson(ORACLE_WORKFLOWS, [WFX("depot-verrouille", ".github", "workflows", "ci.yml")]);
+    ok(r.verdict === "PASS" && (r.findings || []).some((f) => f.regle === "WF-2" && f.sev === "info"),
+      `workflow inscrit au verrou, jugé seul → PASS, la référence par étiquette est dite couverte par actions.lock (obtenu ${r.verdict})`);
+  }
+  {
+    // « Chaque règle cite la page de docs.github.com qui la fonde » : vérifié sur tous les rouges.
+    const regles = new Set();
+    let sansSource = 0;
+    for (const [fichier, , regle] of casWorkflows) {
+      if (!regle || regle === "—") continue;
+      for (const f of runJson(ORACLE_WORKFLOWS, [WFX(fichier)]).findings || []) {
+        if (!/^WF-\d$/.test(f.regle)) continue;
+        regles.add(f.regle);
+        if (!/^https:\/\/docs\.github\.com\/en\//.test(f.source || "")) sansSource++;
+      }
+    }
+    ok(regles.size === 5 && sansSource === 0,
+      `chaque constat WF-1..WF-5 cite sa page docs.github.com (${regles.size} règles vues sur 5, ${sansSource} constat sans source)`);
+  }
+  {
+    const r = runJson(ORACLE_WORKFLOWS, [WFX("n-existe-pas.yml")]);
+    ok(r.verdict === "SKIP", `cible introuvable → SKIP (obtenu ${r.verdict})`);
+  }
+  {
+    const r = runJson(ORACLE_WORKFLOWS, [FX("sca", "aucun-manifeste")]);
+    ok(r.verdict === "SKIP", `dossier sans aucun workflow → SKIP motivé, jamais un PASS silencieux (obtenu ${r.verdict})`);
+  }
 }
 
 // ── TF-1319 · la découverte des oracles LIT LE DISQUE, dans les deux sens ─────────────────────

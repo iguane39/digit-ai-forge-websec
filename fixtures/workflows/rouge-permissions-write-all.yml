@@ -1,0 +1,10 @@
+# Fixture ROUGE WF-1 : permissions trop larges, write-all pour tous les jobs.
+name: permissions trop larges
+on: push
+permissions: write-all
+jobs:
+  construire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - run: echo "construction"

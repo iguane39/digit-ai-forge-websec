@@ -1,0 +1,56 @@
+# Fixture VERTE d'oracle-workflows : les cinq règles WF-1 à WF-5 sont tenues.
+# Dépôt public : tout est fictif (organisation exemple-org, empreintes inventées).
+# Elle exerce aussi le lecteur YAML : clé entre guillemets, liste en flux, chaîne
+# échappée, bloc littéral, bloc plié, commentaires en fin de ligne.
+name: "Intégration \"verte\" complète"
+
+'on':
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  NIVEAU: 'lecture seule, aucun secret long, l''OIDC pour le cloud'
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v6
+      - name: Outil tiers épinglé par SHA complet
+        uses: exemple-org/outil-tiers@89abcdef0123456789abcdef0123456789abcdef
+        with:
+          mode: strict
+      - name: Titre de la pull request passé par une variable intermédiaire
+        env:
+          TITRE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Titre reçu : $TITRE"
+          test -n "$TITRE"
+      - name: Contextes fiables substitués
+        run: >-
+          echo "commit ${{ github.sha }}"
+          sur ${{ github.repository }}
+
+  deployer:
+    needs: verifier
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Connexion par OIDC, sans secret long
+        uses: aws-actions/configure-aws-credentials@fedcba9876543210fedcba9876543210fedcba98
+        with:
+          role-to-assume: ROLE-A-ASSUMER
+          aws-region: REGION
+
+  partage:
+    uses: exemple-org/flux-partages/.github/workflows/construire.yml@76543210fedcba9876543210fedcba9876543210
+    permissions:
+      contents: read

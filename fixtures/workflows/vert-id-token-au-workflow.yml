@@ -1,0 +1,20 @@
+# Fixture VERTE : id-token: write posé au niveau du workflow et hérité par le job.
+# Ce n'est pas une écriture (aucun mineur WF-1) : les guides OIDC disent que
+# id-token: write ne donne le droit de modifier aucune ressource. Le job hérite
+# bien du droit de demander le jeton OIDC (aucun WF-5).
+name: déploiement par OIDC, permissions au workflow
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deployer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - uses: aws-actions/configure-aws-credentials@fedcba9876543210fedcba9876543210fedcba98
+        with:
+          role-to-assume: ROLE-A-ASSUMER
+          aws-region: REGION

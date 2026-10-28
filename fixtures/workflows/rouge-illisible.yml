@@ -1,0 +1,9 @@
+# Fixture ROUGE de lecture : chaîne entre guillemets jamais fermée. Le fichier
+# n'est pas jugé, et l'oracle le dit au lieu de rendre un PASS silencieux.
+name: "fichier illisible
+on: push
+jobs:
+  construire:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "jamais lu"

@@ -1,0 +1,15 @@
+# Fixture ROUGE WF-3, forme bloquante : sous pull_request_target, le checkout
+# vise la tête de la pull request, puis une étape exécute ce code avec les
+# secrets et le jeton de la base (forme « pwn request » documentée).
+name: tests sur le code de la pull request
+on: pull_request_target
+permissions:
+  contents: read
+jobs:
+  tester:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: make test

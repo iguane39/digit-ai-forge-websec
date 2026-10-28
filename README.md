@@ -31,7 +31,7 @@ d'opportunité (§1b, catalogue v1.3.0) :
 
 | Forge | Juge | Ne juge PAS |
 |---|---|---|
-| **`digit-ai-forge-websec`** (ici) | le **PRODUIT web livré** : sa configuration de sécurité runtime (en-têtes HTTP, cookies), ses dépendances vulnérables, sa conformité à un contrat ASVS curé | l'outillage agentique qui a construit le produit |
+| **`digit-ai-forge-websec`** (ici) | le **PRODUIT web livré** : sa configuration de sécurité runtime (en-têtes HTTP, cookies), ses dépendances vulnérables, le durcissement des workflows GitHub Actions qui le livrent, sa conformité à un contrat ASVS curé | l'outillage agentique qui a construit le produit |
 | [`digit-ai-forge-agents-security`](https://github.com/iguane39/digit-ai-forge-agents-security) | l'**OUTILLAGE agentique** : définitions d'agents, appels d'outils, capacités et permissions | le produit livré lui-même — aucune notion de HTTP, de dépendance npm/pip, ni d'ASVS |
 
 Un agent qui a construit un site peut être scanné sain par `agents-security` et livrer un
@@ -48,7 +48,7 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 - **Elle outille, ne décide jamais.** Un verdict `FAIL` est un constat argumenté et localisé
   — jamais un blocage automatique d'une MEP, jamais une correction appliquée à la place d'un
   humain.
-- **Zéro API tierce payante, zéro dépendance npm.** Trois oracles + un script de capture,
+- **Zéro API tierce payante, zéro dépendance npm.** Quatre oracles + un script de capture,
   Node natif (`.mjs`), aucune installation requise pour la partie propre à cette forge.
   `oracle-sca` et `oracle-dast` **délèguent** à l'outillage déjà présent sur le poste (npm,
   pip-audit, OWASP ZAP) — ils ne l'installent jamais et ne dégradent jamais silencieusement
@@ -67,7 +67,8 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 | **Capturer une réponse HTTP réelle** | produire l'entrée de l'oracle d'exposition depuis une URL réelle | `node scripts/capturer.mjs <url> [--sortie <fichier>]` | **prouvé** (fetch natif, zéro dépendance) — ne juge rien, capture seulement |
 | **Juger les dépendances vulnérables** | savoir si les dépendances d'un produit portent des CVE connues | `node oracles/oracle-sca.mjs <dossier-cible>` | **prouvé** — npm (`npm audit`) et pip (`pip-audit`) enveloppés, fixtures vertes/rouges par écosystème, SKIP motivé si l'outillage ou le réseau manque |
 | **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | **partiellement prouvé** — garde-fou dual-use et lecture de rapport ZAP prouvés (13 fixtures, `fixtures/dast/`) ; **branche d'exécution ZAP non prouvée** faute de ZAP sur le poste (SKIP motivé) |
-| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 36/36 PASS déterministes à la dernière exécution connue (14/08/2026), + volet SCA dépendant de l'outillage réel du poste |
+| **Juger les workflows GitHub Actions** | savoir si les workflows qui construisent et livrent mon produit donnent trop de droits, exécutent du code non épinglé ou injectable | `node oracles/oracle-workflows.mjs <dépôt \| dossier \| fichier.yml>` | **prouvé** — 5 règles WF-1..WF-5 sourcées sur docs.github.com (lu le 28/10/2026), 15 fichiers de fixtures (`fixtures/workflows/`), lecteur YAML natif identique à PyYAML sur 30 fichiers le 28/10/2026 |
+| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 61 PASS, 0 FAIL à la dernière exécution connue (28/10/2026), dont le volet SCA dépendant de l'outillage réel du poste |
 
 ### `oracle-exposition.mjs` — 11 règles EX-1..EX-11
 
@@ -140,7 +141,36 @@ Ce que cet oracle **ne juge pas** est déclaré dans son champ `non_juge` — au
 il vérifie une **déclaration écrite et traçable**, jamais la sincérité du consentement ; et
 une absence d'alerte ZAP n'est jamais une absence de vulnérabilité.
 
-### Contrat de sortie (les trois oracles)
+### `oracle-workflows.mjs` — 5 règles WF-1..WF-5 (TF-2001)
+
+Juge les fichiers `.github/workflows/*.yml|*.yaml` d'un dépôt, d'un dossier de workflows ou un
+fichier seul. Lecture statique : rien n'est exécuté, GitHub n'est jamais contacté. Chaque constat
+porte un champ `source`, la page de docs.github.com qui fonde la règle, lue le 28/10/2026.
+
+| Règle | Détecte | Sévérité | Page qui la fonde |
+|---|---|---|---|
+| WF-1 | Job sans clé `permissions`, ni au workflow ni au job ; `write-all` ; valeur non documentée | majeur | `actions/reference/security/secure-use`, `workflow-syntax#permissions` |
+| WF-1 | Écriture posée au niveau du workflow et héritée par un job (`id-token` n'en est pas une) | **mineur** | idem : lecture seule par défaut, élevée job par job |
+| WF-2 | Action ou workflow réutilisable tiers non épinglé par SHA complet de 40 caractères | majeur | `secure-use#using-third-party-actions`, `find-and-customize-actions#using-shas` |
+| WF-2 | Même défaut sur une action des organisations `actions` ou `github` | **mineur** | « Pin actions to a tag only if you trust the creator » |
+| WF-2 | Référence inscrite au verrou `.github/workflows/actions.lock` du dépôt | info | `concepts/security/workflow-dependency-lockfiles` (préversion publique) |
+| WF-3 | Déclencheur `pull_request_target`, bloqué par défaut en dépôt public à partir du 2 décembre 2026 | majeur | `securely-using-pull_request_target`, `about-actions-policies` |
+| WF-3 | Checkout de la tête de la pull request sous ce déclencheur (`ref`, `repository`, `allow-unsafe-pr-checkout`) | bloquant | idem, forme « pwn request » |
+| WF-4 | Contexte non fiable substitué dans un `run:` (`github.event.…` finissant par `body`, `title`, `ref`… ; `github.head_ref`), directement ou par une variable `env` qui le porte | bloquant | `concepts/security/script-injections` |
+| WF-5 | Secret long passé à l'une des 8 actions de connexion dont GitHub documente l'OIDC, dans un job sans `id-token: write` | majeur | `concepts/security/openid-connect` et le guide du fournisseur |
+
+```
+node oracles/oracle-workflows.mjs <dépôt | dossier de workflows | fichier.yml>
+```
+
+Le lecteur YAML est natif, sans dépendance. Il couvre le sous-ensemble qu'emploient les workflows et
+**refuse** le reste (ancres, alias, étiquettes, clés complexes) : le fichier est alors dit non jugé
+(règle `—`, verdict `FAIL`), jamais un `PASS` silencieux. Comparé à PyYAML le 28/10/2026 sur 30
+fichiers (15 workflows de produits du poste et 15 fixtures), il a rendu 30 lectures identiques.
+Ce que l'oracle ne voit pas est déclaré dans `non_juge` : au premier rang, la visibilité du dépôt et
+les permissions par défaut réglées hors fichier.
+
+### Contrat de sortie (tous les oracles)
 
 ```json
 { "oracle": "...", "version": "0.1.0", "artefact": "...", "verdict": "PASS|FAIL|SKIP",
@@ -149,7 +179,9 @@ une absence d'alerte ZAP n'est jamais une absence de vulnérabilité.
 ```
 
 Exit `0` = PASS, `1` = FAIL, `2` = SKIP. `oracle-sca` et `oracle-dast` ajoutent `synthese`
-(compteurs) et `seuils_appliques` (source + valeurs). Pour `oracle-dast` : `FAIL` couvre aussi
+(compteurs) et `seuils_appliques` (source + valeurs). `oracle-workflows` ajoute `synthese`
+(fichiers lus et jugés, jobs, étapes, constats par règle) et `sources[]` (`url`, `lu_le`), et
+chacun de ses constats porte `source`. Pour `oracle-dast` : `FAIL` couvre aussi
 le **refus du garde-fou** (rien n'a été émis) et `SKIP` les deux cas où rien n'a pu être jugé
 — aucune cible fournie, ou ZAP absent du poste.
 
@@ -179,8 +211,8 @@ curés**, listés explicitement dans le fichier — leur chapitre ASVS n'est pas
 node oracles/self-test.mjs
 ```
 
-`oracle-exposition` (15 fixtures) et le volet garde-fou/rapport d'`oracle-dast` (13 cas) sont
-**entièrement déterministes** — zéro réseau, zéro dépendance de poste, et **aucun scan n'est
+`oracle-exposition` (15 fixtures), `oracle-workflows` (15 fichiers de fixtures, 19 contrôles) et le
+volet garde-fou/rapport d'`oracle-dast` (13 cas) sont **entièrement déterministes** — zéro réseau, zéro dépendance de poste, et **aucun scan n'est
 lancé par le self-test**, fût-il autorisé (les cas d'exécution forcent `WEBSEC_DAST_ZAP` sur un
 chemin injouable). Le volet `oracle-sca` dépend de l'outillage **réellement présent** sur
 le poste qui exécute le self-test (npm, pip-audit) et de l'accès réseau à leurs bases
@@ -216,6 +248,11 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
   injoignable), le verdict est `SKIP` motivé — jamais un `PASS` faute de preuve.
   `osv-scanner` (multi-écosystème) n'est **pas** enveloppé en v0, faute de poste équipé pour
   le prouver par fixture.
+- **`oracle-workflows` lit des fichiers, pas un dépôt GitHub.** Il ne voit ni la visibilité du
+  dépôt (la politique par défaut sur `pull_request_target` ne vise que les dépôts publics), ni les
+  permissions par défaut du jeton réglées dans le dépôt ou l'organisation, ni les politiques
+  Actions. Il ne suit pas les actions composites, les images `docker://` ni les dépendances
+  transitives. Sa liste de contextes non fiables est celle que la page donne comme « typique ».
 - **`oracle-exposition` ne juge pas la couche TLS.** Version de protocole, suites de
   chiffrement, validité et chaîne du certificat sont hors périmètre — v0 juge la réponse
   applicative capturée par un `fetch`, pas une négociation TLS.
@@ -237,7 +274,8 @@ oracles/
   oracle-exposition.mjs   juge une capture HTTP {url,status,headers} — 11 règles EX-1..EX-11
   oracle-sca.mjs          enveloppe npm audit / pip-audit en verdict machine normalisé
   oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils
-  self-test.mjs           rejeu intégral à double sens (36 contrôles)
+  oracle-workflows.mjs    juge les workflows GitHub Actions — 5 règles WF-1..WF-5, lecteur YAML natif
+  self-test.mjs           rejeu intégral à double sens (61 contrôles)
 scripts/
   capturer.mjs            capture réelle fetch(url) → JSON d'entrée d'oracle-exposition
 referentiels/
@@ -248,4 +286,6 @@ fixtures/
   sca/                    manifestes npm/pip synthétiques (vulnérables + propres) + cas SKIP
   dast/                   autorisations synthétiques (valide/expirée/production/incomplète),
                           rapports ZAP synthétiques (propre/vulnérable), seuils desserrés
+  workflows/              workflows synthétiques : 2 verts, 9 rouges (une par règle au moins),
+                          1 mineur, un dépôt fictif avec verrou actions.lock
 ```

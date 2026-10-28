@@ -1,0 +1,14 @@
+# Fixture ROUGE WF-4 par détour : la variable d'environnement porte le corps d'un
+# commentaire, puis le script la substitue par une expression ${{ env.CORPS }}
+# au lieu de lire la variable du shell.
+name: réponse aux commentaires
+on: issue_comment
+permissions:
+  contents: read
+env:
+  CORPS: ${{ github.event.comment.body }}
+jobs:
+  repondre:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ env.CORPS }}"

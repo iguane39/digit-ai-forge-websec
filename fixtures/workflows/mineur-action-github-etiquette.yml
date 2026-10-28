@@ -1,0 +1,11 @@
+# Fixture de sévérité MINEURE WF-2 : action d'une organisation de GitHub
+# (actions/) épinglée par étiquette. La règle est relevée, le verdict reste PASS.
+name: action de GitHub épinglée par étiquette
+on: push
+permissions:
+  contents: read
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6

@@ -1,0 +1,14 @@
+# Fixture : fichier de verrouillage fictif, sur la forme lue le 28/10/2026 à
+# https://docs.github.com/en/actions/concepts/security/workflow-dependency-lockfiles
+# (préversion publique, sujette à changement). Un vrai verrou se génère par
+# gh actions-lock et ne s'édite jamais à la main.
+version: 'v0.0.2'
+workflows:
+    '.github/workflows/ci.yml':
+        - 'exemple-org/outil-tiers@v3.1.0'
+dependencies:
+    'exemple-org/outil-tiers@v3.1.0':
+        ref: 'v3.1.0'
+        commit: 'sha1-0000000000000000000000000000000000000000'
+        owner_id: 1
+        repo_id: 2

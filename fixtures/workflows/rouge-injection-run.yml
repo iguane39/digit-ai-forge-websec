@@ -1,0 +1,16 @@
+# Fixture ROUGE WF-4 : le titre d'une issue, entrée non fiable, est substitué
+# dans le script avant son exécution (injection de script).
+name: tri des issues
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  trier:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Titre substitué dans le script
+        run: |
+          titre="${{ github.event.issue.title }}"
+          echo "$titre"

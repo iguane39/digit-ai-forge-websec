@@ -1,0 +1,11 @@
+# Fixture : même dépôt, mais ce workflow n'est pas inscrit au verrou. Sa
+# référence par étiquette reste une action tierce non épinglée (WF-2).
+name: workflow non inscrit au verrou
+on: push
+permissions:
+  contents: read
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: exemple-org/outil-tiers@v3.1.0
