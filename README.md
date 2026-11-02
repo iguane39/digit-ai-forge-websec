@@ -237,6 +237,18 @@ chacun avec son geste de vérification et son outillage (`oracle-exposition` | `
 curés**, listés explicitement dans le fichier — leur chapitre ASVS n'est pas curé non plus.
 `challenge_date: 2026-08-14` (re-challenger à la publication d'une WSTG v5.0).
 
+## Référentiel `referentiels/classes-attaque.md`
+
+Liste datée des **classes d'attaque qu'une revue de code doit chercher** : 9 classes de base (injection,
+contrôle d'accès, ressources et fichiers, cryptographie et secrets, logique métier, abus de fonction,
+chaînes de confiance, joker, évidences) et 117 classes fines des familles qui touchent un produit web,
+plus 36 classes hors produit web nommées par groupe. Source : `security-audit-skill` de Cloudflare,
+licence MIT, commit `c1c8a8c` du 14/09/2026 (avis de droits dans le fichier). Chaque classe est recoupée
+avec `asvs-l1.md` et `wstg-cas.md` et dit ce qu'un oracle de la forge en lit aujourd'hui. Le fichier ne
+nomme aucun produit, ne contient aucune faille réelle et n'est lu par aucun oracle. La relecture d'un
+produit n'a lieu que sur mandat qui le nomme. `challenge_date: 2026-11-02`, prochaine revue le
+2027-02-02.
+
 ## Rejouer les preuves
 
 ```
@@ -319,6 +331,7 @@ scripts/
 referentiels/
   asvs-l1.md              contrat de sécurité v0, sous-ensemble curé ASVS 5.0.0 niveau L1
   wstg-cas.md             méthode de test, 28 cas curés WSTG 4.2 rattachés à asvs-l1.md
+  classes-attaque.md      classes d'attaque d'une revue de code, source Cloudflare (MIT), recoupées ASVS et WSTG
 fixtures/
   exposition/             15 fixtures JSON (vertes + rouges) pour oracle-exposition
   exposition-statique/    8 fichiers _headers synthétiques : 1 vert, 7 rouges (EX par sonde, HD-1, HD-2)

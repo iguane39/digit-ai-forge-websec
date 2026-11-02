@@ -26,6 +26,9 @@ Détail complet : `README.md`. Mandat d'origine : TF-0123
   résument en une ligne française — ne jamais coller le texte intégral d'un standard dans ce
   dépôt. Tout cas WSTG curé est rattaché à une exigence d'`asvs-l1.md` ; sans rattachement,
   il n'entre pas.
+- **Classes d'attaque d'une revue de code.** `referentiels/classes-attaque.md` dérive du
+  `security-audit-skill` de Cloudflare (licence MIT, avis de droits conservé dans le fichier, commit
+  cité) : ne jamais en retirer l'avis, ne jamais y consigner une faille réelle ni nommer un produit.
 - **Avant toute modification d'une règle** : rejouer `node oracles/self-test.mjs` (double
   sens — verte passe, rouge échoue pour la bonne raison). Le volet `oracle-sca` peut
   légitimement rendre des SKIP motivés selon l'outillage du poste — ce n'est pas un échec du

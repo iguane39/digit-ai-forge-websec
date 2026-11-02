@@ -5,6 +5,19 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-02 — `referentiels/classes-attaque.md` 0.1.0 (TF-2057, D-136 (a))
+
+- **Nouveau référentiel** des classes d'attaque qu'une revue de code doit chercher : 9 classes de base
+  et 117 classes fines des familles qui touchent un produit web, 36 autres nommées par groupe. Source :
+  `cloudflare/security-audit-skill`, licence MIT, commit `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8`
+  (14/09/2026), avis de droits conservé dans le fichier. Daté du 02/11/2026, prochaine revue le
+  2027-02-02.
+- **Recoupement** de chaque classe avec `asvs-l1.md` et `wstg-cas.md`, et avec ce que les oracles de la
+  forge en lisent. Trois classes de base (contrôle d'accès, fichiers et SSRF, logique métier) n'ont
+  aucun rattachement curé ; l'écart est dit dans le fichier, non comblé.
+- **Ni oracle, ni skill, ni relecture de produit.** Aucun produit nommé, aucune faille réelle. La
+  recette `oracles/self-test.mjs` ne change pas.
+
 ## 2026-10-28 — `oracle-exposition-statique` 0.1.0, `oracle-exposition` 0.2.0 (TF-1996, part websec)
 
 - **Nouvel oracle `oracles/oracle-exposition-statique.mjs`** : il juge le fichier `_headers` de
