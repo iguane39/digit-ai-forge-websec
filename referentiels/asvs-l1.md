@@ -1,5 +1,5 @@
 ---
-version: 0.1.0
+version: 0.2.0
 challenge_date: 2026-08-12
 sources:
   - "OWASP Application Security Verification Standard (ASVS) 5.0.0 — publié mai 2025, licence CC BY-SA 4.0 — https://github.com/OWASP/ASVS/tree/master/5.0"
@@ -19,11 +19,20 @@ au texte source : https://github.com/OWASP/ASVS/tree/master/5.0/en.
 application, avant les renforcements L2 (données sensibles) et L3 (critique). Curation
 volontairement centrée sur les chapitres où `digit-ai-forge-websec` apporte une vérification
 outillée v0 (V3 Web Frontend Security, V15 Secure Coding and Architecture — dépendances) et
-quelques chapitres adjacents à fort enjeu produit web (V1, V6, V12, V13, V14). **Restes
-explicites** (loi transverse n°3 du pilot — l'oubli ne se tait pas) : V2 Validation and
-Business Logic, V4 API and Web Service, V5 File Handling, V7 Session Management,
-V8 Authorization, V9 Self-contained Tokens, V10 OAuth and OIDC, V11 Cryptography,
-V16 Security Logging and Error Handling, V17 WebRTC — non curés en v0, à élargir sur mandat.
+quelques chapitres adjacents à fort enjeu produit web (V1, V6, V12, V13, V14). Depuis la 0.2.0
+(03/11/2026, TF-2071), les trois classes que les revues de code relèvent le plus — contrôle d'accès,
+fichiers et SSRF, logique métier — sont curées : V2 Validation and Business Logic, V5 File
+Handling et V8 Authorization, leurs seules exigences L1. **Restes explicites** (loi transverse
+n°3 du pilot — l'oubli ne se tait pas) : V4 API and Web Service, V7 Session Management,
+V9 Self-contained Tokens, V10 OAuth and OIDC, V11 Cryptography, V16 Security Logging and
+Error Handling, V17 WebRTC — non curés, à élargir sur mandat.
+
+**Numérotation.** Les identifiants sont ceux de l'ASVS **5.0.0** (chapitre 8 = Authorization,
+chapitre 14 = Data Protection) ; la 4.0.3 numérote autrement (son V8 est la protection des données).
+Les lignes V2, V5 et V8 ci-dessous ont été relues le 03/11/2026 contre les fichiers
+`5.0/en/0x11-…`, `0x14-…` et `0x17-…` du dépôt OWASP/ASVS au tag `v5.0.0_release` (commit
+`5cf9b03`) : identifiant, niveau et sens. Les autres lignes gardent leur date de relecture
+(`challenge_date`).
 
 **Méthode de test associée.** Ce document dit *ce qu'on exige* ; `referentiels/wstg-cas.md`
 (WSTG 4.2 curé, 14/08/2026) dit *comment on le teste*, cas par cas, chaque cas rattaché à une
@@ -46,6 +55,15 @@ constat honnête d'absence d'automatisation.
 | V1.3.2 | `eval()` et exécution de code dynamique évités ; entrée assainie si inévitable | revue humaine | manuel |
 | V1.5.1 | Parseurs XML configurés en restrictif, entités externes désactivées (anti-XXE) | revue humaine | manuel |
 
+## V2 — Validation and Business Logic (logique métier, intégrité des données)
+
+| ID ASVS | Résumé (une ligne) | Vérification | Statut |
+|---|---|---|---|
+| V2.1.1 | Les règles de validation des entrées (formats courants ou format interne) sont documentées | revue humaine | manuel |
+| V2.2.1 | Toute entrée qui pèse sur une décision métier ou de sécurité est validée contre une liste de valeurs, de motifs et de bornes admis (en L1, ces entrées-là suffisent) | revue humaine | manuel |
+| V2.2.2 | La validation est imposée sur une couche serveur de confiance ; celle du client sert l'usage, jamais de contrôle de sécurité | revue humaine | manuel |
+| V2.3.1 | Un flux métier d'un même utilisateur n'avance que dans l'ordre prévu des étapes, sans en sauter aucune | revue humaine | manuel |
+
 ## V3 — Web Frontend Security (en-têtes, cookies, CSRF)
 
 | ID ASVS | Résumé (une ligne) | Vérification | Statut |
@@ -67,6 +85,15 @@ constat honnête d'absence d'automatisation.
 > coûteuses à outiller et à fort effet. Elles ne sont donc **pas** listées comme L1 dans ce
 > tableau pour ne pas fausser la lecture du niveau réellement tenu.
 
+## V5 — File Handling (téléversement, chemins de fichier, SSRF par nom de fichier)
+
+| ID ASVS | Résumé (une ligne) | Vérification | Statut |
+|---|---|---|---|
+| V5.2.1 | Seuls des fichiers d'une taille que l'application sait traiter sans perte de performance ni déni de service sont acceptés | revue humaine | manuel |
+| V5.2.2 | Extension conforme à celles attendues et contenu conforme au type annoncé (octets magiques, réécriture d'image), y compris dans une archive ; en L1, les fichiers qui pèsent sur une décision suffisent | revue humaine | manuel |
+| V5.3.1 | Un fichier téléversé ou produit depuis une entrée non fiable, rangé dans un dossier public, n'est jamais exécuté comme code serveur quand on l'appelle en HTTP | revue humaine | manuel |
+| V5.3.2 | Les chemins de fichier se bâtissent sur des données internes ou de confiance, non sur les noms soumis ; sinon validation et assainissement stricts (traversée de chemin, inclusion locale ou distante, SSRF) | revue humaine | manuel |
+
 ## V6 — Authentication (sous-ensemble mots de passe)
 
 | ID ASVS | Résumé (une ligne) | Vérification | Statut |
@@ -84,6 +111,24 @@ constat honnête d'absence d'automatisation.
 | V6.3.2 | Comptes par défaut (`root`/`admin`/`sa`) absents ou désactivés | revue humaine | manuel |
 | V6.4.1 | Mots de passe/codes d'activation générés par le système : aléatoires, expirants, jamais définitifs | revue humaine | manuel |
 | V6.4.2 | Indices de mot de passe et questions secrètes absents | revue humaine | manuel |
+
+## V8 — Authorization (contrôle d'accès)
+
+| ID ASVS | Résumé (une ligne) | Vérification | Statut |
+|---|---|---|---|
+| V8.1.1 | La documentation d'autorisation fixe les règles d'accès par fonction et par donnée, selon les permissions du consommateur et les attributs de la ressource | revue humaine | manuel |
+| V8.2.1 | L'accès à une fonction est réservé aux consommateurs qui en ont la permission explicite | revue humaine | manuel |
+| V8.2.2 | L'accès à une donnée est réservé aux consommateurs autorisés sur cet objet précis (parade à l'IDOR et au BOLA, accès non autorisé à un objet par sa référence) | revue humaine | manuel |
+| V8.3.1 | Les règles d'autorisation s'appliquent dans une couche serveur de confiance, sans s'appuyer sur un contrôle qu'un consommateur non fiable peut manipuler, tel le JavaScript client | revue humaine | manuel |
+
+> Note de cohérence (0.2.0) : les exigences voisines classées **L2/L3** dans V1, V2, V5 et V8 ne
+> sont pas listées dans les tableaux ci-dessus, pour ne pas fausser la lecture du niveau L1 tenu,
+> mais elles restent exigibles aux niveaux supérieurs. Pour les trois classes de la 0.2.0 : SSRF
+> par validation de protocole, de domaine, de chemin et de port (V1.3.6, L2) ; limites métier,
+> transactions, verrous et anti-automatisation (V2.3.2, V2.3.3, V2.3.4, V2.4.1, L2) ; archives
+> et téléchargement de fichiers (V5.2.3, V5.4.1, V5.4.2, V5.4.3, L2 ; V5.3.3, L3) ; accès au
+> champ d'un objet et isolation entre locataires (V8.2.3, V8.4.1, L2). Niveaux relus au tag
+> `v5.0.0_release` le 03/11/2026.
 
 ## V12 — Secure Communication (TLS)
 
@@ -122,7 +167,7 @@ constat honnête d'absence d'automatisation.
 
 Les huit autres catégories 2025 (contrôle d'accès, injection, cryptographie, conception,
 authentification, intégrité logicielle/data, journalisation, gestion des erreurs) ne sont
-**pas** couvertes par un oracle de cette forge en v0 — cf. tableaux V1/V6 ci-dessus, marqués
+**pas** couvertes par un oracle de cette forge en v0 — cf. tableaux V1/V2/V5/V6/V8 ci-dessus, marqués
 « revue humaine ».
 
 ## Ce que ce contrat n'est pas
@@ -135,5 +180,5 @@ authentification, intégrité logicielle/data, journalisation, gestion des erreu
   garde-fou d'autorisation écrite, mais son exécution réelle n'est pas prouvée faute de ZAP
   sur le poste (dette D-W1 requalifiée, cf. `README.md §Limites`). La **méthode** de test
   correspondante est curée dans `referentiels/wstg-cas.md`.
-- **Pas un audit de code.** Les exigences V1/V6 marquées « revue humaine » nécessitent une
+- **Pas un audit de code.** Les exigences V1/V2/V5/V6/V8 marquées « revue humaine » nécessitent une
   lecture de code ou un test manuel — cet oracle ne les exécute pas.

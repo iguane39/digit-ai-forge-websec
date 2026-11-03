@@ -1,5 +1,5 @@
 ---
-version: 0.1.0
+version: 0.2.0
 challenge_date: 2026-08-14
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
@@ -23,6 +23,13 @@ identifiants ci-dessous sont ceux de la 4.2 ; la branche `master` en a ajouté d
 `challenge_date: 2026-08-14` — re-challenger la fraîcheur (publication d'une v5.0) avant tout
 usage éloigné de cette date.
 
+**Ajout du 03/11/2026 (0.2.0, TF-2071).** 11 cas rejoignent le référentiel : les 4 du chapitre 4.5
+(ATHZ-01 à ATHZ-04), 6 du chapitre 4.10 (BUSL-01, -02, -03, -06, -08, -09) et INPV-19. Leurs
+identifiants et leurs intitulés ont été relus le jour même contre le dépôt OWASP/wstg au tag
+`v4.2` (commit `dd33419`), dossiers `05-Authorization_Testing`, `10-Business_Logic_Testing` et
+`07-Input_Validation_Testing`. Le rattachement à une exigence d'`asvs-l1.md` est un jugement de
+curation de cette forge : l'OWASP ne publie pas de table de correspondance entre les deux standards.
+
 **Règle de curation** (ce qui explique ce qui est là et ce qui n'y est pas) : un cas WSTG
 n'est curé que s'il **vérifie une exigence présente dans `referentiels/asvs-l1.md`**. Le
 document ASVS reste la source des exigences (ce qu'on doit tenir) ; celui-ci n'apporte que la
@@ -31,7 +38,7 @@ marqués comme tels : ils vérifient des règles déjà **outillées** par `orac
 (CSP, anti-clickjacking, fuite de version) dont les exigences ASVS correspondantes sont
 classées **L2/L3** — hors table L1, mais nommées dans la « note de cohérence » d'`asvs-l1.md`.
 
-**28 cas curés** sur les 12 chapitres de la WSTG 4.2 : 25 rattachés à une exigence L1 nommée,
+**39 cas curés** sur les 12 chapitres de la WSTG 4.2 : 36 rattachés à une exigence L1 nommée,
 3 rattachés hors L1 (règles outillées). Chapitres et cas non curés : listés nommément
 en fin de document (loi transverse n°3 du pilot — l'oubli ne se tait pas).
 
@@ -73,6 +80,15 @@ vaut jamais preuve d'absence de défaut.
 | WSTG-ATHN-08 | Le compte repose-t-il sur des questions secrètes ou des indices devinables ? | Parcourir les parcours d'inscription et de récupération et relever toute question secrète ou tout indice proposé | V6.4.2 | manuel |
 | WSTG-ATHN-09 | Le changement de mot de passe exige-t-il l'ancien, et la réinitialisation délivre-t-elle un jeton à usage unique et expirant ? | Changer le mot de passe sans fournir l'ancien ; rejouer deux fois un lien de réinitialisation et le rejouer après expiration annoncée | V6.2.2, V6.2.3 | manuel |
 
+## 4.5 — Authorization Testing (WSTG-ATHZ)
+
+| ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
+|---|---|---|---|---|
+| WSTG-ATHZ-01 | Un paramètre qui désigne un fichier permet-il de sortir du répertoire prévu, ou d'inclure un fichier local ou distant ? | Repérer les paramètres de nom ou de chemin de fichier, y substituer une remontée de répertoire (`../`, encodée, double encodée), un chemin absolu puis une URL distante, et lire si un contenu hors de la racine est servi | V5.3.2 | manuel |
+| WSTG-ATHZ-02 | Une fonction ou une ressource réservée reste-t-elle accessible sans session, après déconnexion, ou depuis un rôle qui ne devrait pas l'avoir ? | Relever avec un compte administrateur de test toutes les fonctions réservées, puis rejouer chaque requête sans session, après déconnexion et avec un compte de rôle inférieur | V8.2.1, V8.3.1 | manuel |
+| WSTG-ATHZ-03 | Un utilisateur peut-il modifier son propre rôle ou ses privilèges, ou atteindre ce que détient un compte plus privilégié (élévation verticale) ou de même niveau (élévation horizontale) ? | Chercher dans les requêtes les champs de rôle, de groupe ou de niveau, les rejouer modifiés depuis un compte ordinaire, puis tenter les actions réservées à un compte plus privilégié et celles d'un compte pair | V8.2.1, V8.2.2 | manuel |
+| WSTG-ATHZ-04 | Une référence d'objet fournie par l'utilisateur (identifiant, nom de fichier, clé) suffit-elle à lire ou modifier l'objet d'un autre compte (IDOR) ? | Avec deux comptes de test qui possèdent chacun des objets, substituer dans la requête de l'un l'identifiant d'un objet de l'autre (lecture, modification, suppression) et comparer avec la réponse à un identifiant inexistant | V8.2.2 | manuel |
+
 ## 4.6 — Session Management (WSTG-SESS)
 
 | ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
@@ -91,6 +107,18 @@ vaut jamais preuve d'absence de défaut.
 | WSTG-INPV-07 | Le parseur XML accepte-t-il des entités externes ou une structure altérée ? | Soumettre un document déclarant une entité externe locale et observer si le contenu est résolu ou l'erreur détaillée | V1.5.1 | manuel |
 | WSTG-INPV-11 | Une entrée finit-elle évaluée comme du code applicatif (`eval`, désérialisation, template) ? | Injecter une expression neutre mais calculable dans les paramètres suspects et vérifier si le résultat calculé ressort | V1.3.2 | manuel |
 | WSTG-INPV-12 | Une entrée atteint-elle un appel système (injection de commande) ? | Ajouter un séparateur de commande suivi d'une commande inoffensive et observer la sortie ou le délai induit | V1.2.5 | manuel |
+| WSTG-INPV-19 | Une fonction qui va chercher une ressource à partir d'une valeur fournie (URL, nom de fichier, adresse de rappel) peut-elle être orientée vers une adresse interne ou un fichier local (SSRF) ? | Sur l'instance de recette autorisée, substituer à la valeur une adresse de bouclage, une adresse privée, le point d'accès de métadonnées du fournisseur de cloud, puis une redirection vers l'une d'elles, et observer réponse, délai ou contenu renvoyé | V5.3.2 | manuel |
+
+## 4.10 — Business Logic Testing (WSTG-BUSL)
+
+| ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
+|---|---|---|---|---|
+| WSTG-BUSL-01 | Le serveur refuse-t-il une donnée logiquement invalide que l'écran a laissée passer (valeur hors bornes, incohérence entre champs) ? | Envoyer directement au serveur, sans passer par l'écran, des valeurs négatives, nulles, hors bornes ou incohérentes entre elles, et lire si l'opération métier les accepte | V2.2.1, V2.2.2 | manuel |
+| WSTG-BUSL-02 | Une requête fabriquée à la main permet-elle de contourner l'interface et de déclencher une valeur ou une fonction que le métier n'attend pas ? | Intercepter les requêtes d'un parcours, modifier les champs cachés et les paramètres de prix, de remise ou de statut, puis appeler les routes que l'écran n'expose pas | V2.2.2, V8.3.1 | manuel |
+| WSTG-BUSL-03 | Le serveur recontrôle-t-il ce que l'interface présente comme non modifiable (champ caché, liste déroulante, valeur calculée) ? | Modifier par un proxy un champ caché ou une valeur de liste pour désigner une valeur ou un objet non proposé à ce compte, et vérifier que le serveur refuse | V2.2.1, V2.2.2 | manuel |
+| WSTG-BUSL-06 | Peut-on atteindre l'étape finale d'un parcours en sautant, rejouant ou reculant des étapes, et un parcours abandonné laisse-t-il ses effets ? | Appeler directement la requête de l'étape finale sans les précédentes, rejouer une étape déjà validée, abandonner à mi-parcours et lire l'état résultant (points crédités, commande créée) | V2.3.1 | manuel |
+| WSTG-BUSL-08 | Le téléversement refuse-t-il un fichier hors liste, selon l'extension, le type annoncé et le contenu ? | Téléverser un fichier d'extension non prévue, un fichier dont le type annoncé contredit le contenu, puis un lot mêlant fichiers admis et refusés, et lire si l'un passe | V5.2.2 | manuel |
+| WSTG-BUSL-09 | Un fichier dangereux d'un type admis est-il accepté, rangé et servi de façon à s'exécuter ? | Téléverser un fichier inoffensif qui imite un script (marqueur neutre, jamais une charge réelle), l'appeler par son URL publique et vérifier qu'il n'est ni exécuté ni interprété | V5.3.1 | manuel |
 
 ## 4.11 — Client-side (WSTG-CLNT)
 
@@ -110,14 +138,13 @@ vaut jamais preuve d'absence de défaut.
 
 ## Chapitres et cas NON curés
 
-**Quatre chapitres entiers sont hors de ce référentiel**, parce que le chapitre ASVS qu'ils
+**Deux chapitres entiers sont hors de ce référentiel**, parce que le chapitre ASVS qu'ils
 vérifieraient n'est lui-même pas curé dans `referentiels/asvs-l1.md` — les curer ici
-produirait des cas de test rattachés à rien :
+produirait des cas de test rattachés à rien. ATHZ et BUSL en sortent depuis la 0.2.0, quand
+`asvs-l1.md` a curé V8, V2 et V5 :
 
 | Chapitre WSTG non curé | Ce qu'il teste | Motif |
 |---|---|---|
-| **WSTG-ATHZ** — Authorization Testing | traversée de répertoire, contournement d'autorisation, élévation de privilège, IDOR | ASVS V8 (Authorization) non curé en L1 dans `asvs-l1.md` |
-| **WSTG-BUSL** — Business Logic Testing | validation métier, forge de requêtes, contrôles d'intégrité, contournement de workflow, upload de fichiers | ASVS V2 (Validation and Business Logic) non curé |
 | **WSTG-ERRH** — Error Handling | messages d'erreur trop bavards, traces de pile | ASVS V16 (Security Logging and Error Handling) non curé |
 | **WSTG-APIT** — API Testing | test GraphQL (seul cas de la 4.2) | ASVS V4 (API and Web Service) non curé |
 
@@ -130,12 +157,15 @@ produirait des cas de test rattachés à rien :
 | WSTG-IDNT | IDNT-01, IDNT-03, IDNT-04, IDNT-05 |
 | WSTG-ATHN | ATHN-04, ATHN-05, ATHN-10 |
 | WSTG-SESS | SESS-01, SESS-03, SESS-06, SESS-07, SESS-08, SESS-09 |
-| WSTG-INPV | INPV-03, INPV-04, INPV-06, INPV-08, INPV-09, INPV-10, INPV-13, INPV-14, INPV-15, INPV-16, INPV-17, INPV-18, INPV-19 |
+| WSTG-INPV | INPV-03, INPV-04, INPV-06, INPV-08, INPV-09, INPV-10, INPV-13, INPV-14, INPV-15, INPV-16, INPV-17, INPV-18 |
+| WSTG-BUSL | BUSL-04 (chronométrage : seule exigence voisine, V2.4.2, est L3), BUSL-05 (limite d'usage d'une fonction : portée par V2.3.2 et V2.4.1, L2), BUSL-07 (défenses contre le détournement d'usage : V2.4.1 en L2 et V16, non curé) |
 | WSTG-CLNT | CLNT-02, CLNT-03, CLNT-05, CLNT-06, CLNT-08, CLNT-10, CLNT-11, CLNT-12, CLNT-13 |
 | WSTG-CRYP | CRYP-02, CRYP-04 |
 
 **Exigences L1 d'`asvs-l1.md` sans cas WSTG curé ici** : V1.2.3 (échappement JS/JSON),
-V3.2.1 (contenu non interprété hors contexte), V6.2.6/V6.2.7/V6.2.8 (masquage, collage,
+V2.1.1 (documentation des règles de validation), V5.2.1 (taille des fichiers acceptés),
+V8.1.1 (documentation des règles d'autorisation), V3.2.1 (contenu non interprété hors
+contexte), V6.2.6/V6.2.7/V6.2.8 (masquage, collage,
 absence de troncature du mot de passe), V15.1.1 et V15.2.1 (dépendances — vérifiées par
 `oracle-sca`, hors méthode WSTG). Elles restent exigibles ; simplement, aucune méthode de
 test WSTG n'est proposée pour elles en v0.
@@ -145,19 +175,19 @@ recouper au sommaire du dépôt source : une v5.0 publiée renumérote et ajoute
 
 ## Limites — ce que ce référentiel n'est pas
 
-- **Ni certification, ni pentest.** Dérouler ces 28 cas ne vaut ni certification OWASP, ni
+- **Ni certification, ni pentest.** Dérouler ces 39 cas ne vaut ni certification OWASP, ni
   test d'intrusion : un pentest est conduit par un humain qui enchaîne les faiblesses,
   improvise hors scénario et juge l'exploitabilité réelle. Ce document ne fait que fixer une
   méthode reproductible sur un sous-ensemble.
-- **Une méthode, pas un outil.** 20 des 28 cas sont marqués `manuel` et 3 autres ne sont
+- **Une méthode, pas un outil.** 31 des 39 cas sont marqués `manuel` et 3 autres ne sont
   outillés que partiellement : ils décrivent le geste à faire, personne ne les exécute
   automatiquement. Un cas coché sans geste exécuté n'est pas un cas tenu — seuls 5 cas
   (CONF-07, CONF-12, INFO-02, SESS-02, CLNT-09) sont rendus par un oracle exécuté.
-- **Couverture partielle assumée.** 4 chapitres entiers, plus les 54 cas nommés des chapitres
+- **Couverture partielle assumée.** 2 chapitres entiers, plus les 56 cas nommés des chapitres
   partiellement couverts, sont hors périmètre (listés ci-dessus) : l'absence de constat sur
   ces cas n'est pas un constat d'absence de défaut.
 - **Tout cas actif est soumis au garde-fou dual-use.** Les gestes qui sollicitent réellement
-  la cible (ATHN-02, ATHN-03, INPV-*, CONF-06…) ne s'exécutent que sur périmètre autorisé par
+  la cible (ATHN-02, ATHN-03, ATHZ-*, INPV-*, BUSL-*, CONF-06…) ne s'exécutent que sur périmètre autorisé par
   écrit, sur instance dédiée, jamais sur un système tiers — mêmes règles que
   `oracles/oracle-dast.mjs`, qui les encode en refus fail-closed.
 - **Cité, jamais recopié.** Les résumés et gestes ci-dessus sont une reformulation ; ils ne se

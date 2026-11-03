@@ -5,6 +5,23 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-03 — `asvs-l1.md` 0.2.0, `wstg-cas.md` 0.2.0, `classes-attaque.md` 0.2.0 (TF-2071)
+
+- **`asvs-l1.md`** : 12 exigences L1 de l'ASVS 5.0.0 rejoignent la table, 4 pour chacune des classes
+  que les revues de code relèvent le plus : V8 (contrôle d'accès : V8.1.1, V8.2.1, V8.2.2, V8.3.1),
+  V5 (fichiers et SSRF par nom de fichier : V5.2.1, V5.2.2, V5.3.1, V5.3.2), V2 (logique métier :
+  V2.1.1, V2.2.1, V2.2.2, V2.3.1). Identifiants, niveaux et sens relus au tag `v5.0.0_release`. Une
+  note nomme les exigences voisines L2 et L3 non listées (SSRF général V1.3.6, limites et verrous
+  métier V2.3.2 à V2.4.1, archives V5.2.3, champ et locataires V8.2.3 et V8.4.1).
+- **`wstg-cas.md`** : 11 cas WSTG 4.2 s'ajoutent, de 28 à 39 : ATHZ-01 à ATHZ-04, BUSL-01, -02, -03,
+  -06, -08, -09 et INPV-19, chacun rattaché à une exigence L1. BUSL-04, -05 et -07 restent non
+  curés, motif dit : leur exigence est L2 ou L3.
+- **`classes-attaque.md`** : CA-02, CA-03 et CA-05 se rattachent aux exigences et cas retenus, et
+  cessent d'être des classes sans rattachement ; DN-1, MS-2, MS-4 et CA-06 sont mis à jour dans le
+  même sens. Daté du 03/11/2026.
+- **Ni oracle, ni skill.** La recette `oracles/self-test.mjs` ne lit pas les référentiels et ne
+  change pas : 77 PASS, 0 FAIL avant et après.
+
 ## 2026-11-02 — `referentiels/classes-attaque.md` 0.1.0 (TF-2057, D-136 (a))
 
 - **Nouveau référentiel** des classes d'attaque qu'une revue de code doit chercher : 9 classes de base

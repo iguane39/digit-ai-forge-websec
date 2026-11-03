@@ -19,7 +19,7 @@ en mission récurrente à livrable différentiel.
 | **Scanner les dépendances vulnérables (SCA)** | savoir si mes dépendances portent des CVE connues, avec seuils | `node oracles\oracle-sca.mjs <racine-produit> [--seuils f.json]` | prouvé (experimental) |
 | **Tenir un contrat de sécurité ASVS L1** | m'engager sur un niveau de sécurité vérifiable et daté | `referentiels\asvs-l1.md (frontmatter challenge_date)` | déclaré (experimental) |
 | **Juger un scan dynamique (DAST)** | savoir ce qu'un scan ZAP relève sur une cible **autorisée par écrit**, en verdict à seuils | `node oracles\oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | prouvé pour le garde-fou et la lecture de rapport ; **exécution ZAP non prouvée** (ZAP absent du poste) |
-| **Dérouler une méthode de test de sécurité** | savoir *comment* on teste une exigence ASVS, cas par cas | `referentiels\wstg-cas.md` (28 cas WSTG 4.2 curés, rattachés à `asvs-l1.md`) | déclaré (experimental) |
+| **Dérouler une méthode de test de sécurité** | savoir *comment* on teste une exigence ASVS, cas par cas | `referentiels\wstg-cas.md` (39 cas WSTG 4.2 curés, rattachés à `asvs-l1.md`) | déclaré (experimental) |
 
 Le catalogue consolidé des dix forges vit chez le pilot :
 [digit-ai-factory/catalogues/CATALOGUES.md](https://github.com/iguane39/digit-ai-factory/blob/main/catalogues/CATALOGUES.md).
@@ -223,17 +223,18 @@ Sous-ensemble curé du niveau **L1** de l'OWASP ASVS 5.0.0 (mai 2025, CC BY-SA 4
 identifiants **cités**, texte intégral **non recopié** (voir le fichier pour l'attribution
 complète et le lien vers le standard). Chaque exigence porte : l'ID ASVS, un résumé en une
 ligne française, le moyen de vérification (`oracle-exposition` | `oracle-sca` | `revue
-humaine`) et son statut (`outillé` | `manuel`). `challenge_date: 2026-08-12` — à re-challenger
+humaine`) et son statut (`outillé` | `manuel`). Depuis la 0.2.0 (03/11/2026) il couvre aussi les
+exigences L1 de V2, V5 et V8 (logique métier, fichiers, contrôle d'accès). `challenge_date: 2026-08-12` — à re-challenger
 en fraîcheur avant tout usage éloigné de cette date.
 
 ## Référentiel `referentiels/wstg-cas.md`
 
 Sous-ensemble curé de l'**OWASP Web Security Testing Guide 4.2** (déc. 2020, dernière version
 stable au 14/08/2026 ; CC BY-SA 4.0) — identifiants **cités**, fiches **non recopiées**.
-Là où `asvs-l1.md` dit *ce qu'on exige*, ce document dit *comment on le teste* : **28 cas**
-(25 rattachés à une exigence L1 nommée d'`asvs-l1.md`, 3 aux règles outillées classées L2/L3),
+Là où `asvs-l1.md` dit *ce qu'on exige*, ce document dit *comment on le teste* : **39 cas**
+(36 rattachés à une exigence L1 nommée d'`asvs-l1.md`, 3 aux règles outillées classées L2/L3),
 chacun avec son geste de vérification et son outillage (`oracle-exposition` | `oracle-dast` |
-`manuel`). Quatre chapitres entiers (ATHZ, BUSL, ERRH, APIT) et 54 cas nommés restent **non
+`manuel`). Deux chapitres entiers (ERRH, APIT) et 56 cas nommés restent **non
 curés**, listés explicitement dans le fichier — leur chapitre ASVS n'est pas curé non plus.
 `challenge_date: 2026-08-14` (re-challenger à la publication d'une WSTG v5.0).
 
@@ -287,7 +288,7 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
   explicite. Ce refus est structurel, pas une option : il ne se désactive pas.
 - **Pas de pentest manuel.** Cette forge outille des vérifications machine reproductibles ;
   elle ne remplace ni un audit de sécurité humain, ni un test d'intrusion. `wstg-cas.md`
-  décrit une **méthode**, il ne l'exécute pas : 20 de ses 28 cas sont manuels.
+  décrit une **méthode**, il ne l'exécute pas : 31 de ses 39 cas sont manuels.
 - **`oracle-sca` dépend du poste.** Aucun outil SCA n'est installé par cette forge ; si
   aucun de npm/pip-audit n'est présent (ou si le réseau vers leur base d'avisos est
   injoignable), le verdict est `SKIP` motivé — jamais un `PASS` faute de preuve.
@@ -306,13 +307,13 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
   chiffrement, validité et chaîne du certificat sont hors périmètre — v0 juge la réponse
   applicative capturée par un `fetch`, pas une négociation TLS.
 - **Référentiel WSTG partiel.** `referentiels/wstg-cas.md` ne cure que les cas rattachables à
-  une exigence d'`asvs-l1.md` : 4 chapitres entiers (autorisation, logique métier, gestion
-  d'erreurs, API) et 54 cas nommés restent dehors. L'absence de constat sur eux n'est pas un
+  une exigence d'`asvs-l1.md` : 2 chapitres entiers (gestion d'erreurs, API) et 56 cas
+  nommés restent dehors. L'absence de constat sur eux n'est pas un
   constat d'absence de défaut.
 - **Référentiel ASVS partiel.** `referentiels/asvs-l1.md` cure un sous-ensemble du niveau L1
   centré sur les chapitres couverts par les deux oracles (V3, V15) et quelques chapitres
-  adjacents (V1, V6, V12, V13, V14) — 9 chapitres L1 restent non curés, listés explicitement
-  dans le référentiel (jamais tus).
+  adjacents (V1, V2, V5, V6, V8, V12, V13, V14) — 7 chapitres restent non curés (V4, V7, V9, V10,
+  V11, V16, V17), listés explicitement dans le référentiel (jamais tus).
 - **Pas de décision.** Un verdict `FAIL` ne bloque rien tout seul — un humain ou un run amont
   décide de la suite via le pilot.
 
@@ -330,7 +331,7 @@ scripts/
   capturer.mjs            capture réelle fetch(url) → JSON d'entrée d'oracle-exposition
 referentiels/
   asvs-l1.md              contrat de sécurité v0, sous-ensemble curé ASVS 5.0.0 niveau L1
-  wstg-cas.md             méthode de test, 28 cas curés WSTG 4.2 rattachés à asvs-l1.md
+  wstg-cas.md             méthode de test, 39 cas curés WSTG 4.2 rattachés à asvs-l1.md
   classes-attaque.md      classes d'attaque d'une revue de code, source Cloudflare (MIT), recoupées ASVS et WSTG
 fixtures/
   exposition/             15 fixtures JSON (vertes + rouges) pour oracle-exposition

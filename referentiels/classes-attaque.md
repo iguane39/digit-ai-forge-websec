@@ -1,6 +1,6 @@
 ---
-version: 0.1.0
-date: 2026-11-02
+version: 0.2.0
+date: 2026-11-03
 challenge_date: 2026-11-02
 prochaine_revue: 2027-02-02
 sources:
@@ -79,11 +79,11 @@ chaque compagnon, résumés).
 | ID | Classe (nom de la source) | Ce qu'on cherche | ASVS | WSTG | Forge |
 |---|---|---|---|---|---|
 | CA-01 | Injection | Le chemin d'une entrée non fiable jusqu'à un puits dangereux (requête, HTML, commande, gabarit, chemin, redirection, désérialisation), y compris l'injection indirecte : donnée stockée sans risque puis relue dans un autre contexte, noms de champs, clés, en-têtes, et systèmes secondaires (journaux, caches, index) | V1.2.1 à V1.2.5, V1.3.1, V1.3.2, V1.5.1 | INPV-01, -02, -05, -07, -11, -12 ; CLNT-01 | aucune ; `oracle-dast` signale en passif un reflet (INPV-01), sans prouver l'exploitation |
-| CA-02 | Access control | Qu'un appelant ne puisse rien faire hors de son autorité : bon contrôle, sur la bonne ressource, par le bon mécanisme. Chemin parallèle au même effet avec un contrôle plus faible, champ du corps qui écrase la restriction, route authentifiée mais non autorisée, lot, export ou import sans contrôle par élément | V8 non curé | ATHZ non curé | aucune |
-| CA-03 | Resource and file handling | Traversée de chemin (liens symboliques, encodages, octet nul), SSRF (redirections, DNS rebinding, différences d'analyse d'URL), désérialisation, extraction d'archive, fichiers temporaires, courses entre contrôle et usage ; corruption mémoire si le langage l'admet | V5 non curé ; identifiant SSRF non relevé ici | ATHZ (traversée) non curé | aucune |
+| CA-02 | Access control | Qu'un appelant ne puisse rien faire hors de son autorité : bon contrôle, sur la bonne ressource, par le bon mécanisme. Chemin parallèle au même effet avec un contrôle plus faible, champ du corps qui écrase la restriction, route authentifiée mais non autorisée, lot, export ou import sans contrôle par élément | V8.1.1, V8.2.1, V8.2.2, V8.3.1 ; l'accès au champ d'un objet (V8.2.3) et l'isolation entre locataires (V8.4.1) sont L2, non listés | ATHZ-02, ATHZ-03, ATHZ-04 ; BUSL-02 (route appelée hors interface) | aucune |
+| CA-03 | Resource and file handling | Traversée de chemin (liens symboliques, encodages, octet nul), SSRF (redirections, DNS rebinding, différences d'analyse d'URL), désérialisation, extraction d'archive, fichiers temporaires, courses entre contrôle et usage ; corruption mémoire si le langage l'admet | V5.2.1, V5.2.2, V5.3.1, V5.3.2 (chemins, inclusion, SSRF par nom de fichier) ; le SSRF général (V1.3.6) et les archives (V5.2.3, V5.3.3) sont L2 ou L3, non listés ; désérialisation, fichiers temporaires et courses sans exigence L1 curée | ATHZ-01, INPV-19, BUSL-08, BUSL-09 | aucune |
 | CA-04 | Cryptography and secrets | Aléa faible pour un jeton ou une clé, secrets en dur ou dans les journaux, erreurs, URL et réponses client, dérivation de clé, HMAC non vérifié, nonce réutilisé, comparaison à canal temporel, primitive mal employée, repli sans chiffrement quand l'opération échoue | V11 non curé ; V6.4.1, V12.1.1, V12.2.1, V12.2.2, V14.2.1 | CRYP-01, CRYP-03 ; IDNT-02 | HSTS seule, par EX-3 |
-| CA-05 | Business logic | Les erreurs de logique que les scanners ne trouvent pas : sauter, reculer ou rejouer une étape, échec partiel sans retour arrière, courses à effet métier (double dépense), valeurs négatives, nulles, débordantes ou mal converties, vérification juste pour une autre règle, confiance implicite dans une donnée stockée, expiration et fuseaux, comportement par défaut quand une configuration manque | V2 non curé | BUSL non curé | aucune |
-| CA-06 | Feature abuse and data leakage | Une fonction légitime détournée : export ou sauvegarde qui sort des données au-delà du droit, import ou restauration qui contourne la validation, recherche, filtre ou tri qui révèle l'existence, messages, délais ou codes qui distinguent « absent » de « interdit », brouillon ou aperçu qui fuit (flux, plan de site, cache), URL de rappel que le serveur va chercher | V14.2.1, V14.3.1 ; le reste non curé | SESS-04 ; ERRH et IDNT-04 non curés | aucune |
+| CA-05 | Business logic | Les erreurs de logique que les scanners ne trouvent pas : sauter, reculer ou rejouer une étape, échec partiel sans retour arrière, courses à effet métier (double dépense), valeurs négatives, nulles, débordantes ou mal converties, vérification juste pour une autre règle, confiance implicite dans une donnée stockée, expiration et fuseaux, comportement par défaut quand une configuration manque | V2.1.1, V2.2.1, V2.2.2, V2.3.1 ; les limites, transactions et verrous métier (V2.3.2 à V2.3.4) sont L2, non listés | BUSL-01, BUSL-02, BUSL-03, BUSL-06 ; BUSL-04, -05, -07 non curés | aucune |
+| CA-06 | Feature abuse and data leakage | Une fonction légitime détournée : export ou sauvegarde qui sort des données au-delà du droit, import ou restauration qui contourne la validation, recherche, filtre ou tri qui révèle l'existence, messages, délais ou codes qui distinguent « absent » de « interdit », brouillon ou aperçu qui fuit (flux, plan de site, cache), URL de rappel que le serveur va chercher | V14.2.1, V14.3.1 ; V5.3.2 pour l'URL de rappel ; le reste non curé | SESS-04 ; INPV-19 pour l'URL de rappel ; ERRH et IDNT-04 non curés | aucune |
 | CA-07 | Chained vulnerabilities and trust boundaries | Un comportement permis seul devient une faille quand un autre composant suppose une garantie plus forte : échecs en plusieurs étapes, écart de garantie entre deux composants, usage de second ordre, élargissement de portée d'un jeton ou d'une délégation, fenêtres de temps (révocation, cache), restauration qui rejoue un état invalide | transverse, aucun chapitre | transverse | aucune |
 | CA-08 | Wildcard | Aucune catégorie imposée : le code le plus étrange, les fonctions inachevées ou expérimentales, l'API appelée comme le frontal ne le ferait jamais, les points d'accès non documentés, le mélange de fonctions non prévues ensemble, l'historique git (correctif annulé, secret retiré mais présent), les actions irréversibles, les hypothèses sur l'environnement, ce que les tests ne couvrent pas | transverse | transverse | aucune |
 | CA-09 | Obvious things | Une liste littérale à parcourir en entier : secrets en dur, TODO de sécurité, mode debug activable, comptes de test, routes `/debug`, `/admin`, `/metrics`, fichiers `.env` ou clés suivis, `.gitignore`, dépendances et CVE, `eval` et appels de commande, CORS, attributs de cookies, redirections ouvertes, TLS imposé, erreurs qui rendent trace ou chemin | V1.3.2, V3.3.1, V3.4.1, V3.4.2, V6.3.2, V13.4.1, V15.2.1 | CONF-04, CONF-07, SESS-02, CLNT-04, CLNT-07 | EX-3 (TLS imposé), EX-8 à EX-10 (attributs de cookies), `oracle-sca` (CVE connues) ; le reste aucune |
@@ -117,7 +117,7 @@ Chaque ligne regroupe les classes qu'un compagnon de la source range sous un mê
 
 | ID | Classes | Ce qu'on cherche | ASVS / WSTG | Forge |
 |---|---|---|---|---|
-| DN-1 | Missing tenant or owner enforcement ; Composite-key and namespace collision ; Policy and query disagreement ; Blob and signed-reference overreach | Un champ « propriétaire » sur l'enregistrement n'est pas une isolation : chercher la requête, la clé ou la politique qui la fait respecter sur chaque lecture et écriture | V8 non curé / ATHZ non curé | aucune |
+| DN-1 | Missing tenant or owner enforcement ; Composite-key and namespace collision ; Policy and query disagreement ; Blob and signed-reference overreach | Un champ « propriétaire » sur l'enregistrement n'est pas une isolation : chercher la requête, la clé ou la politique qui la fait respecter sur chaque lecture et écriture | V8.2.2 ; l'isolation entre locataires (V8.4.1) est L2, non listée / ATHZ-04 | aucune |
 | DN-2 | Search, cache, and index ACL drift ; Analytics, logs, traces, and diagnostics as alternate readers ; Enumeration and aggregate oracles | Une copie dérivée (index, cache, journal, statistique) qui survit aux droits de l'original ou qu'un lecteur plus large peut lire | V16 non curé / ERRH non curé | aucune |
 | DN-3 | Export and backup scope expansion ; Import and restore authority expansion ; Migration default and ownership confusion ; Backup and replication boundary drift | Un export qui contient plus que le droit du demandeur, une restauration qui contourne les règles de validation, une migration qui laisse des valeurs par défaut sans propriétaire | aucun rattachement curé | aucune |
 | DN-4 | Soft-delete and tombstone bypass ; Stale authorization and derived copy use ; Retention and queued-work overrun ; Restore reintroduces invalid state | Une suppression ou une révocation que contourne une recherche, un lien, une tâche en file ou une restauration | aucun rattachement curé | aucune |
@@ -147,9 +147,9 @@ Chaque ligne regroupe les classes qu'un compagnon de la source range sous un mê
 | ID | Classes | Ce qu'on cherche | ASVS / WSTG | Forge |
 |---|---|---|---|---|
 | MS-1 | Message boundary and canonicalization disagreement ; Union, enum, and default confusion ; Envelope and payload identity mismatch | Deux lecteurs d'un même message qui divergent sur sa longueur, ses champs ou son expéditeur | V4 non curé / APIT non curé | aucune |
-| MS-2 | Interceptor and method-path inconsistency ; Peer identity to application-principal confusion ; Per-item and streaming authorization gaps ; Callback and reply-correlation confusion | Un contrôle d'accès appliqué aux appels simples mais pas aux flux, ni aux éléments suivants d'un flux | V4, V8 non curés | aucune |
+| MS-2 | Interceptor and method-path inconsistency ; Peer identity to application-principal confusion ; Per-item and streaming authorization gaps ; Callback and reply-correlation confusion | Un contrôle d'accès appliqué aux appels simples mais pas aux flux, ni aux éléments suivants d'un flux | V8.2.1, V8.3.1 ; V4 non curé / ATHZ-02 | aucune |
 | MS-3 | Topic, routing-key, and subscription scope gaps ; Dead-letter, retry, and diagnostic disclosure ; Untrusted producer treated as control plane | Un abonné qui lit la file d'un autre ; un message qui se déclare événement d'administration | V4 non curé | aucune |
-| MS-4 | Duplicate delivery and idempotency gaps ; Out-of-order and stale message acceptance ; Acknowledgment/commit ordering defects ; Partial multi-consumer transitions | Un effet répété par une relivraison, un état ancien qui écrase le récent | V2 non curé / BUSL non curé | aucune |
+| MS-4 | Duplicate delivery and idempotency gaps ; Out-of-order and stale message acceptance ; Acknowledgment/commit ordering defects ; Partial multi-consumer transitions | Un effet répété par une relivraison, un état ancien qui écrase le récent | V2.3.1 pour l'ordre des étapes ; rejeu et idempotence sans exigence L1 curée / BUSL-06 ; BUSL-05 non curé | aucune |
 
 ### 2.7 Ressources et disponibilité — `RESOURCE-EXHAUSTION-AND-AVAILABILITY.md` (13 classes)
 
@@ -189,10 +189,13 @@ par `grep` des lignes en gras seul de chaque fichier compagnon, recoupé à la m
 
 ## 4. Constats du recoupement avec les référentiels de la forge
 
-- **3 classes de base ne sont pas curées.** Contrôle d'accès (CA-02), fichiers et SSRF (CA-03)
-  et logique métier (CA-05) n'ont aucune exigence ASVS L1 ni aucun cas WSTG dans la forge : V8, V5,
-  V2, ATHZ et BUSL figurent parmi les « restes explicites » d'`asvs-l1.md` et de `wstg-cas.md`. Les
-  curer est une décision à part, hors de ce document.
+- **Les 3 classes de base sans rattachement sont curées depuis la 0.2.0 (03/11/2026, TF-2071),
+  en partie.** Contrôle d'accès (CA-02) se rattache à 4 exigences de V8 et 3 cas ATHZ ; fichiers et
+  SSRF (CA-03) à 4 exigences de V5 et 4 cas (ATHZ-01, INPV-19, BUSL-08, BUSL-09) ; logique métier
+  (CA-05) à 4 exigences de V2 et 4 cas BUSL. Le niveau L1 reste muet sur ce que ces classes ont de plus
+  fin : le SSRF général (V1.3.6), les limites, transactions et verrous métier (V2.3.2 à V2.3.4) et
+  l'isolation entre locataires (V8.4.1) sont L2 ; BUSL-04, -05 et -07 ne sont pas curés. Un relecteur
+  qui vise ces points lit les exigences L2 dans la note de cohérence d'`asvs-l1.md`.
 - **Un écart de jugement reste ouvert.** La source classe un attribut de cookie ou un en-tête manquant
   seul en simple durcissement (HT-2, bloc de discipline). `oracle-exposition` leur donne une sévérité :
   EX-8 bloquant, EX-9 et EX-10 majeurs. Les deux restent valables, parce qu'un oracle de configuration
