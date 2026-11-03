@@ -20,6 +20,7 @@ en mission récurrente à livrable différentiel.
 | **Tenir un contrat de sécurité ASVS L1** | m'engager sur un niveau de sécurité vérifiable et daté | `referentiels\asvs-l1.md (frontmatter challenge_date)` | déclaré (experimental) |
 | **Juger un scan dynamique (DAST)** | savoir ce qu'un scan ZAP relève sur une cible **autorisée par écrit**, en verdict à seuils | `node oracles\oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | prouvé pour le garde-fou et la lecture de rapport ; **exécution ZAP non prouvée** (ZAP absent du poste) |
 | **Dérouler une méthode de test de sécurité** | savoir *comment* on teste une exigence ASVS, cas par cas | `referentiels\wstg-cas.md` (39 cas WSTG 4.2 curés, rattachés à `asvs-l1.md`) | déclaré (experimental) |
+| **Commander une revue de code** | faire relire le code d'un produit par un agent, sous plafond de jetons et au format de rapport fixe | `referentielsevue-de-code.md` (consigne type, tranches de 2 000 lignes, 4 statuts de constat) | déclaré (experimental) |
 
 Le catalogue consolidé des dix forges vit chez le pilot :
 [digit-ai-factory/catalogues/CATALOGUES.md](https://github.com/iguane39/digit-ai-factory/blob/main/catalogues/CATALOGUES.md).
@@ -250,6 +251,16 @@ nomme aucun produit, ne contient aucune faille réelle et n'est lu par aucun ora
 produit n'a lieu que sur mandat qui le nomme. `challenge_date: 2026-11-02`, prochaine revue le
 2027-02-02.
 
+## Référentiel `referentiels/revue-de-code.md`
+
+Ce qui fixe **comment** une revue de code se commande, se borne et se rend : la consigne type de
+l'agent, un plafond de 300 000 jetons tenu par tranches de 2 000 lignes, la forme du rapport et 4
+statuts de constat (lu, relu, rejoué, non confirmé) qui mesurent la part de faux constats. Issu de
+l'étude 20261103k du pilot et de la décision humaine D-162 (a) du 03/11/2026. La revue reste sur
+décision humaine ; l'étape de mise en production du pilot la propose (`ETAPE-MEP.md` § 1 quater) et ne
+bloque jamais. Aucun oracle ne lit un rapport de revue. `challenge_date: 2026-11-03`, prochaine revue
+le 2026-12-01.
+
 ## Rejouer les preuves
 
 ```
@@ -334,6 +345,7 @@ referentiels/
   asvs-l1.md              contrat de sécurité v0, sous-ensemble curé ASVS 5.0.0 niveau L1
   wstg-cas.md             méthode de test, 39 cas curés WSTG 4.2 rattachés à asvs-l1.md
   classes-attaque.md      classes d'attaque d'une revue de code, source Cloudflare (MIT), recoupées ASVS et WSTG
+  revue-de-code.md        consigne, plafond par tranches et format du rapport d'une revue de code
 fixtures/
   exposition/             15 fixtures JSON (vertes + rouges) pour oracle-exposition
   exposition-statique/    8 fichiers _headers synthétiques : 1 vert, 7 rouges (EX par sonde, HD-1, HD-2)

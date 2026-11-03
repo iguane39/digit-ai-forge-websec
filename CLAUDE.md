@@ -29,6 +29,10 @@ Détail complet : `README.md`. Mandat d'origine : TF-0123
 - **Classes d'attaque d'une revue de code.** `referentiels/classes-attaque.md` dérive du
   `security-audit-skill` de Cloudflare (licence MIT, avis de droits conservé dans le fichier, commit
   cité) : ne jamais en retirer l'avis, ne jamais y consigner une faille réelle ni nommer un produit.
+- **Revue de code d'un produit.** `referentiels/revue-de-code.md` fixe la consigne de l'agent, le
+  plafond de 300 000 jetons tenu par tranches et le format du rapport (D-162 (a), 03/11/2026). Une
+  revue n'a lieu que sur décision humaine qui nomme le produit ; son rapport reste chez le produit, et
+  aucune faille ni aucun nom de produit n'entre dans ce dépôt.
 - **Avant toute modification d'une règle** : rejouer `node oracles/self-test.mjs` (double
   sens — verte passe, rouge échoue pour la bonne raison). Le volet `oracle-sca` peut
   légitimement rendre des SKIP motivés selon l'outillage du poste — ce n'est pas un échec du

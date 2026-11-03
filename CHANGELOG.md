@@ -5,6 +5,18 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-03 — `referentiels/revue-de-code.md` 1.0.0 (TF-2057, D-162 (a))
+
+- **Nouveau référentiel** : la consigne type d'une revue de code par un seul agent, le plafond de
+  300 000 jetons tenu par le pilot en tranches de 2 000 lignes (la suivante part si le cumul relevé
+  laisse 130 000 jetons de marge), le format du rapport et ses 4 statuts de constat : lu, relu, rejoué,
+  non confirmé. Source : l'étude 20261103k du pilot, option O2, et les 2 revues mesurées de TF-2057.
+- **Intégration** : l'étape de mise en production du pilot propose la revue à son entrée
+  (`ETAPE-MEP.md` § 1 quater) ; son oracle avertit en TM14 quand le dossier ne dit rien de la revue.
+  La forge ne bloque toujours aucune mise en production.
+- **Ni oracle, ni skill.** Aucun produit nommé, aucune faille. La recette `oracles/self-test.mjs` ne
+  change pas. Prochaine revue le 2026-12-01, avec la mesure des statuts.
+
 ## 2026-11-03 — `scripts/capturer.mjs` : la valeur des cookies n'entre plus dans la capture (TF-2095)
 
 - **Effet** : une capture d'origine qui pose un cookie (jeton de session ou de formulaire) ne garde plus
