@@ -15,11 +15,12 @@
 // un échec du self-test, jamais présenté comme une preuve du sens rouge).
 //
 // Exit 0 si tous les contrôles PROUVÉS passent, 1 sinon. À rejouer après toute modification.
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FX = (...p) => path.join(HERE, "..", "fixtures", ...p);
@@ -351,6 +352,88 @@ console.log("\nSELF-TEST forge-websec — oracle-exposition-statique (fichier _h
   {
     const r = runJson(ORACLE_STATIQUE, [FX("sca", "aucun-manifeste")]);
     ok(r.verdict === "SKIP", `dossier sans fichier _headers → SKIP motivé, jamais un PASS silencieux (obtenu ${r.verdict})`);
+  }
+}
+
+// ── TF-2095 · la capture ne garde jamais la VALEUR d'un cookie (classe capture-de-preuve-porte-un-jeton) ──
+// Une capture rangée sous forge/etapes/websec est versionnée : un jeton de session ou de formulaire y
+// entrerait dans le dépôt. Le banc sert la réponse d'une origine locale qui pose trois cookies (dont une
+// valeur à « = » de bourrage et un cookie sans attribut de sécurité), lance le VRAI capturer.mjs contre
+// elle, puis juge la capture : ROUGE si une valeur survit dans le fichier ou dans la sortie standard,
+// VERT si les noms et les attributs restent, de sorte qu'oracle-exposition juge encore la capture.
+console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2095 : valeur des cookies caviardée à la capture)\n");
+{
+  const CAPTURER = path.join(HERE, "..", "scripts", "capturer.mjs");
+  const SECRETS = ["JETON-SESSION-9f3a7c21", "JETON-FORMULAIRE-b81d44e0", "YWJjZGVmZw=="];
+  const origine = http.createServer((req, res) => {
+    res.setHeader("Set-Cookie", [
+      `session=${SECRETS[0]}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=3600`,
+      `csrf=${SECRETS[1]}; Path=/app; SameSite=Lax`,
+      `jeton=${SECRETS[2]}; Domain=exemple.test; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Secure; HttpOnly; SameSite=None`,
+    ]);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.end("ok");
+  });
+  await new Promise((r) => origine.listen(0, "127.0.0.1", r));
+  const urlOrigine = `http://127.0.0.1:${origine.address().port}/`;
+  const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-capture-"));
+  const lancer = (args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, urlOrigine, ...args], { encoding: "utf8", timeout: 30000 },
+    (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+  try {
+    const fichier = path.join(tmpCap, "capture.json");
+    const viaFichier = await lancer(["--sortie", fichier]);
+    const brut = fs.existsSync(fichier) ? fs.readFileSync(fichier, "utf8") : "";
+    const viaStdout = await lancer([]);
+    ok(viaFichier.code === 0 && viaStdout.code === 0 && brut.length > 0,
+      `capturer.mjs capture l'origine locale à cookies, par fichier et par sortie standard (codes ${viaFichier.code} / ${viaStdout.code})`);
+    // ROUGE : aucune valeur de cookie ne survit, ni dans le fichier, ni sur la sortie standard, ni dans les messages.
+    const survivants = SECRETS.filter((s) => (brut + viaStdout.stdout + viaFichier.stderr + viaStdout.stderr).includes(s));
+    ok(survivants.length === 0,
+      `ROUGE · la valeur des 3 cookies est caviardée à la capture — fichier, sortie standard et messages (valeurs survivantes : ${survivants.length})`);
+    // VERT : la capture reste exploitable — noms et attributs présents, un seul caviardage par cookie.
+    let cap = null;
+    try { cap = JSON.parse(brut); } catch { /* le contrôle suivant le dit */ }
+    const sc = cap?.headers?.["set-cookie"];
+    const attendu = [
+      ["session", ["Path=/", "HttpOnly", "Secure", "SameSite=Strict", "Max-Age=3600"]],
+      ["csrf", ["Path=/app", "SameSite=Lax"]],
+      ["jeton", ["Domain=exemple.test", "Expires=Wed, 21 Oct 2026 07:28:00 GMT", "Secure", "HttpOnly", "SameSite=None"]],
+    ];
+    const nomsEtAttributs = Array.isArray(sc) && sc.length === 3 && attendu.every(([nom, attrs]) => {
+      const c = sc.find((x) => x.startsWith(`${nom}=`));
+      if (!c) return false;
+      const segments = c.split(";").map((s) => s.trim());
+      return attrs.every((a) => segments.includes(a)) && segments.length === attrs.length + 1 && !/^[^=]+=$/.test(segments[0]);
+    });
+    ok(nomsEtAttributs,
+      "VERT · les 3 cookies gardent leur nom et tous leurs attributs (Path, Domain, Expires, Max-Age, Secure, HttpOnly, SameSite), la valeur seule est remplacée");
+    ok(cap?.headers?.["x-content-type-options"] === "nosniff" && cap?.status === 200,
+      "VERT · le reste de la capture (statut, autres en-têtes) est intact");
+    // Exploitable : oracle-exposition juge cette capture (EX-8/EX-9 sur csrf, jamais sur session) et ne recopie aucune valeur.
+    const jug = runJson(ORACLE_EXPOSITION, [fichier]);
+    const ex8 = (jug.findings || []).filter((f) => f.regle === "EX-8").map((f) => f.msg).join(" ");
+    ok(jug.verdict === "FAIL" && /« csrf »/.test(ex8) && !/« session »/.test(ex8),
+      `VERT · la capture caviardée reste exploitable : oracle-exposition lève EX-8 sur le seul cookie csrf, sans Secure (obtenu ${jug.verdict}, EX-8 : « ${ex8.slice(0, 60)} »)`);
+    ok(!SECRETS.some((s) => JSON.stringify(jug).includes(s)),
+      "oracle-exposition ne réintroduit aucune valeur de cookie dans son verdict (capture caviardée)");
+    // oracle-exposition sur une capture NON caviardée (fixture historique à valeur « abc123 ») : il nomme le cookie, jamais sa valeur.
+    const brute = runJson(ORACLE_EXPOSITION, [FX("exposition", "rouge-cookie-insecure.json")]);
+    ok(brute.verdict === "FAIL" && aRegle(brute, "EX-8") &&!JSON.stringify(brute).includes("abc123"),
+      "oracle-exposition sur une capture à valeur en clair (abc123) : règle levée, mais la valeur n'est recopiée dans aucun constat");
+    // Bords de la fonction de caviardage : valeur à « = », cookie sans nom, sans valeur, tableau vide.
+    const { caviarderSetCookie } = await import(pathToFileURL(path.join(HERE, "..", "scripts", "caviarder-cookies.mjs")).href);
+    const bords = [
+      ["a=b=c==; Secure", "a=[caviardé]; Secure"],
+      ["JETONSEUL; HttpOnly", "=[caviardé]; HttpOnly"],
+      ["vide=; Path=/", "vide=[caviardé]; Path=/"],
+      ["  espace = val ue ;Secure;SameSite=Lax", "espace=[caviardé]; Secure; SameSite=Lax"],
+    ];
+    const ecarts = bords.filter(([entree, sortie]) => caviarderSetCookie(entree) !== sortie).map(([e]) => e);
+    ok(ecarts.length === 0 && Array.isArray(caviarderSetCookie([])) && caviarderSetCookie([]).length === 0,
+      `bords du caviardage : valeur à « = », cookie sans nom, valeur vide, espaces, liste vide (écarts : ${ecarts.length})`);
+  } finally {
+    origine.close();
+    fs.rmSync(tmpCap, { recursive: true, force: true });
   }
 }
 

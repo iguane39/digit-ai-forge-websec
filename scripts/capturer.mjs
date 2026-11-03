@@ -4,8 +4,10 @@
 // l'oracle {url, status, headers, capture_ts}. Les redirections ne sont PAS suivies
 // automatiquement (--suivre-redirections pour les suivre) : la configuration de sécurité
 // jugée doit être celle de la réponse réellement obtenue, pas d'une destination en aval.
+// La VALEUR des cookies posés est caviardée à la capture (TF-2095) : nom et attributs sont conservés.
 // Usage : node capturer.mjs <url> [--sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]
 import fs from "node:fs";
+import { caviarderSetCookie } from "./caviarder-cookies.mjs";
 
 const args = process.argv.slice(2);
 const url = args.find((a) => !a.startsWith("--"));
@@ -42,7 +44,9 @@ try {
   const setCookie = typeof res.headers.getSetCookie === "function"
     ? res.headers.getSetCookie()
     : (res.headers.get("set-cookie") ? [res.headers.get("set-cookie")] : []);
-  if (setCookie.length) headers["set-cookie"] = setCookie;
+  // TF-2095 : la capture est versionnée avec le produit, la VALEUR d'un cookie (jeton de session ou de
+  // formulaire) n'y entre jamais ; nom et attributs restent, ce sont eux que l'oracle juge.
+  if (setCookie.length) headers["set-cookie"] = caviarderSetCookie(setCookie);
 
   const capture = {
     url,
