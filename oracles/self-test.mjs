@@ -537,6 +537,112 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2107 : URL, Location,
   }
 }
 
+// ── TF-2133 · cinq en-têtes de plus et l'URL imbriquée (même classe que TF-2107) ──────────────────
+// Content-Location, Link, Refresh, X-Auth-Token et WWW-Authenticate peuvent porter une URL à jeton ou un jeton ;
+// un jeton caché dans un paramètre encodé (redirect_uri=…%3Fcode%3D…) ne se voit pas au nom d'en-tête.
+// Le banc sert une réponse 302 qui porte chaque cas avec un secret reconnaissable, lance le VRAI capturer.mjs, puis
+// juge dans les deux sens : ROUGE si un secret survit ; VERT si ce qui n'est pas un jeton sort octet pour octet.
+console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2133 : Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate, URL encodée)\n");
+{
+  const CAPTURER = path.join(HERE, "..", "scripts", "capturer.mjs");
+  const PORTEURS = {
+    "Content-Location": ["SECRET-CLOC-1a1a"],
+    "Link": ["SECRET-LINK-2b2b"],
+    "Refresh": ["SECRET-REFRESH-3c3c"],
+    "X-Auth-Token": ["SECRET-XAUTH-4d4d"],
+    "WWW-Authenticate": ["SECRET-WWWURL-5e5e", "SECRET-NEGOTIATE-6f6f", "SECRET-NONCE-7a7a"],
+    "Location (redirect_uri encodé)": ["SECRET-NESTED-LOC-8b8b"],
+    "URL capturée (redirect_uri encodé)": ["SECRET-NESTED-URL-9c9c"],
+  };
+  const TOUS = Object.values(PORTEURS).flat();
+  const origine = http.createServer((req, res) => {
+    res.statusCode = 302;
+    res.setHeader("Location", "https://sso.exemple.test/authorize?client_id=app&redirect_uri=https%3A%2F%2Fapp.exemple.test%2Fcb%3Fcode%3DSECRET-NESTED-LOC-8b8b%26state%3Dok&lang=fr");
+    res.setHeader("Content-Location", "/v2/doc?access_token=SECRET-CLOC-1a1a&page=1");
+    res.setHeader("Link", '<https://api.exemple.test/p2?token=SECRET-LINK-2b2b&page=2>; rel="next", <https://api.exemple.test/p1?page=1>; rel="prev"');
+    res.setHeader("Refresh", "0; url=https://sso.exemple.test/r?code=SECRET-REFRESH-3c3c&lang=fr");
+    res.setHeader("X-Auth-Token", "SECRET-XAUTH-4d4d");
+    res.setHeader("WWW-Authenticate", [
+      'Bearer realm="api", error="invalid_token", resource_metadata="https://api.exemple.test/.well-known/m?access_token=SECRET-WWWURL-5e5e"',
+      "Negotiate SECRET-NEGOTIATE-6f6f",
+      'Digest realm="api", nonce="SECRET-NONCE-7a7a", qop="auth"',
+    ]);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.end("");
+  });
+  await new Promise((r) => origine.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${origine.address().port}/`;
+  const urlImbriquee = `${base}?redirect_uri=https%3A%2F%2Fapp.exemple.test%2Fcb%3Fcode%3DSECRET-NESTED-URL-9c9c%26state%3Dok&page=2`;
+  const urlAttendue = `${base}?redirect_uri=https%3A%2F%2Fapp.exemple.test%2Fcb%3Fcode%3D[caviardé]%26state%3Dok&page=2`;
+  const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-entetes-"));
+  const lancer = (cible, args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, cible, ...args], { encoding: "utf8", timeout: 30000 },
+    (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+  try {
+    const fichier = path.join(tmpCap, "capture.json");
+    const viaFichier = await lancer(urlImbriquee, ["--sortie", fichier]);
+    const brut = fs.existsSync(fichier) ? fs.readFileSync(fichier, "utf8") : "";
+    const viaStdout = await lancer(urlImbriquee, []);
+    ok(viaFichier.code === 0 && viaStdout.code === 0 && brut.length > 0,
+      `capturer.mjs capture l'origine locale aux cinq en-têtes à jeton et à l'URL encodée, par fichier et par sortie standard (codes ${viaFichier.code} / ${viaStdout.code})`);
+    // ROUGE : par porteur, aucun secret ne survit ni dans le fichier, ni sur la sortie standard, ni dans les messages.
+    const sortie = brut + viaStdout.stdout + viaFichier.stderr + viaStdout.stderr;
+    for (const [porteur, secrets] of Object.entries(PORTEURS)) {
+      const survivants = secrets.filter((s) => sortie.includes(s));
+      ok(survivants.length === 0, `ROUGE · porteur « ${porteur} » caviardé à la capture (secrets survivants : ${survivants.length}/${secrets.length})`);
+    }
+    // VERT : la capture reste exploitable, seules les valeurs de jeton sont remplacées.
+    let cap = null;
+    try { cap = JSON.parse(brut); } catch { /* les contrôles suivants le disent */ }
+    const h = cap?.headers ?? {};
+    ok(h["content-location"] === "/v2/doc?access_token=[caviardé]&page=1",
+      `VERT · Content-Location garde chemin et page=1, access_token est remplacé (obtenu ${h["content-location"]})`);
+    ok(h.link === '<https://api.exemple.test/p2?token=[caviardé]&page=2>; rel="next", <https://api.exemple.test/p1?page=1>; rel="prev"',
+      `VERT · Link garde ses deux liens, ses rel et le lien sans jeton octet pour octet ; seul token est remplacé (obtenu ${h.link})`);
+    ok(h.refresh === "0; url=https://sso.exemple.test/r?code=[caviardé]&lang=fr",
+      `VERT · Refresh garde le délai, l'hôte, le chemin et lang ; seul code est remplacé (obtenu ${h.refresh})`);
+    ok(h["x-auth-token"] === "[caviardé]", `VERT · X-Auth-Token est remplacé en entier (obtenu ${h["x-auth-token"]})`);
+    ok(h["www-authenticate"] === 'Bearer realm="api", error="invalid_token", resource_metadata="https://api.exemple.test/.well-known/m?access_token=[caviardé]", Negotiate [caviardé], Digest realm="api", nonce="[caviardé]", qop="auth"',
+      `VERT · WWW-Authenticate garde schémas, realm, error et qop ; l'URL à jeton, le jeton nu de Negotiate et le nonce sont remplacés (obtenu ${h["www-authenticate"]})`);
+    ok(h.location === "https://sso.exemple.test/authorize?client_id=app&redirect_uri=https%3A%2F%2Fapp.exemple.test%2Fcb%3Fcode%3D[caviardé]%26state%3Dok&lang=fr",
+      `VERT · Location garde client_id, state et lang ; le code caché dans redirect_uri encodé est remplacé (obtenu ${h.location})`);
+    ok(cap?.url === urlAttendue, `VERT · l'URL capturée garde page=2 et l'encodage du redirect_uri, seul son code est remplacé (obtenu ${cap?.url})`);
+    ok(cap?.status === 302 && h["x-content-type-options"] === "nosniff" && cap?.redirections_suivies === false,
+      "VERT · le reste de la capture (statut, autre en-tête, drapeau de redirection) est intact");
+    const jug = runJson(ORACLE_EXPOSITION, [fichier]);
+    ok(jug.verdict === "FAIL" && aRegle(jug, "EX-1") && !TOUS.some((s) => JSON.stringify(jug).includes(s)),
+      `VERT · la capture caviardée reste exploitable : oracle-exposition la juge (EX-1) sans recopier de secret (obtenu ${jug.verdict})`);
+    // Bords du caviardage, sur les fonctions : URL imbriquée (simple, double, liste, non encodée), sans jeton, tableau, casse, idempotence.
+    const { caviarderUrl, caviarderEnTetes } = await import(pathToFileURL(path.join(HERE, "..", "scripts", "caviarder-jetons.mjs")).href);
+    const bordsUrl = [
+      ["https://h.test/p?r=https%253A%252F%252Fa.test%252Fcb%253Fcode%253DSEC", "https://h.test/p?r=https%253A%252F%252Fa.test%252Fcb%253Fcode%253D[caviardé]"],
+      ["https://h.test/p?state=code%3DSEC%26x%3D1", "https://h.test/p?state=code%3D[caviardé]%26x%3D1"],
+      ["https://h.test/p?next=https://a.test/b?token=SEC&x=1", "https://h.test/p?next=https://a.test/b?token=[caviardé]&x=1"],
+      ["https://h.test/p?next=%2Fcompte%3Fapi_key%3DSEC%23frag", "https://h.test/p?next=%2Fcompte%3Fapi_key%3D[caviardé]%23frag"],
+      ["https://h.test/p?redirect_uri=https%3A%2F%2Fapp.test%2Fcb%3Fstate%3Dok%26lang%3Dfr&q=%C3%A9t%C3%A9", "https://h.test/p?redirect_uri=https%3A%2F%2Fapp.test%2Fcb%3Fstate%3Dok%26lang%3Dfr&q=%C3%A9t%C3%A9"],
+      ["https://h.test/p?redirect=/accueil?page=2&b64=YWJjZGVmZw==&mauvais=%E0%A4%A&t=a%2Bb", "https://h.test/p?redirect=/accueil?page=2&b64=YWJjZGVmZw==&mauvais=%E0%A4%A&t=a%2Bb"],
+    ];
+    const ecartsUrl = bordsUrl.filter(([e, s]) => caviarderUrl(e) !== s || caviarderUrl(caviarderUrl(e)) !== s).map(([e, s]) => `${e} → ${caviarderUrl(e)} (attendu ${s})`);
+    ok(ecartsUrl.length === 0, `bords de l'URL imbriquée : double encodage, liste encodée, non encodée, chemin relatif, URL sans jeton intacte, idempotent (écarts : ${ecartsUrl.length}${ecartsUrl.length ? " · " + ecartsUrl[0] : ""})`);
+    const e2 = caviarderEnTetes({
+      "CONTENT-LOCATION": "/a?code=1", Link: ["<https://h.test/n?sig=1>; rel=next"], REFRESH: "5", "x-auth-token": ["t1", "t2"],
+      "WWW-Authenticate": 'Basic realm="zone"', "Www-Authenticate": 'Bearer error="invalid_token", error_description="expired"',
+    });
+    const sansJeton = caviarderEnTetes({
+      Link: '<https://h.test/n?page=2>; rel="next"; anchor="https://h.test/a"', Refresh: "3; URL='https://h.test/ok?lang=fr'",
+      "Content-Location": "/doc/12", "WWW-Authenticate": 'Bearer realm="api", scope="read write"',
+    });
+    const enTetesOk = e2["CONTENT-LOCATION"] === "/a?code=[caviardé]" && e2.Link[0] === "<https://h.test/n?sig=[caviardé]>; rel=next"
+      && e2.REFRESH === "5" && e2["x-auth-token"].join() === "[caviardé],[caviardé]" && e2["WWW-Authenticate"] === 'Basic realm="zone"'
+      && e2["Www-Authenticate"] === 'Bearer error="invalid_token", error_description="expired"'
+      && sansJeton.Link === '<https://h.test/n?page=2>; rel="next"; anchor="https://h.test/a"' && sansJeton.Refresh === "3; URL='https://h.test/ok?lang=fr'"
+      && sansJeton["Content-Location"] === "/doc/12" && sansJeton["WWW-Authenticate"] === 'Bearer realm="api", scope="read write"';
+    ok(enTetesOk, `bords des en-têtes : noms sans casse, valeurs en tableau, Refresh sans URL, défi sans jeton et en-têtes sans jeton intacts (${enTetesOk ? "tous tenus" : JSON.stringify([e2, sansJeton])})`);
+  } finally {
+    origine.close();
+    fs.rmSync(tmpCap, { recursive: true, force: true });
+  }
+}
+
 // ── TF-1319 · la découverte des oracles LIT LE DISQUE, dans les deux sens ─────────────────────
 // Le juge du pilot (méta-oracle d'enclenchement) confronte ce que cette forge DÉCOUVRE aux
 // verdicts consignés au ledger d'un run. Une découverte qui raterait un oracle le rendrait

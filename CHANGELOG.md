@@ -5,6 +5,25 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-04 — `scripts/capturer.mjs` : cinq en-têtes de plus et l'URL encodée ne portent plus de jeton dans la capture (TF-2133)
+
+- **Effet** : même classe que TF-2107. Une capture versionnée ne garde plus en clair : les URL de `Content-Location`,
+  `Link` (chaque `<URL>` et `anchor="URL"`) et `Refresh` (`délai; url=URL`) ; la valeur entière de `X-Auth-Token` ;
+  dans `WWW-Authenticate`, le jeton nu d'un défi (`Negotiate …`), la valeur d'un paramètre de nom de jeton ou de
+  défi (`nonce`, `opaque`, `response`…) et l'URL à jeton d'une valeur (`resource_metadata=`). Schémas, `realm`,
+  `error`, `scope`, `qop` restent. Une valeur de paramètre qui est elle-même une URL ou une liste de paramètres
+  (`redirect_uri=https%3A%2F%2F…%3Fcode%3D…`, jusqu'à 3 niveaux de percent-encoding) est décodée avant d'être jugée,
+  caviardée, puis ré-encodée au même niveau ; une valeur sans jeton sort octet pour octet.
+- **Limite dite** : un jeton dans un segment de chemin (`/reset/<jeton>`) n'a ni nom ni forme à reconnaître sans
+  heuristique d'entropie, qui abîmerait des URL sans jeton ; il n'est pas traité. Les captures déjà écrites ne sont
+  pas réécrites.
+- **Où** : `scripts/caviarder-jetons.mjs` (`caviarderLien`, `caviarderRefresh`, `caviarderDefi`,
+  `caviarderValeurImbriquee`), appelé par `scripts/capturer.mjs` via `caviarderEnTetes` et `caviarderUrl`.
+- **oracle-exposition** : aucune règle ni `VERSION` ne change ; la capture caviardée est jugée comme avant (EX-1).
+- **Preuve** : `oracles/self-test.mjs` rejoue le vrai `capturer.mjs` contre une origine locale qui répond 302 avec
+  chaque porteur en clair. Sens rouge mesuré avant le code : 102 PASS, 16 FAIL (les 7 porteurs, 7 contrôles vert,
+  2 bancs de bords) ; après : 118 PASS, 0 FAIL. 19 contrôles ajoutés.
+
 ## 2026-11-04 — `scripts/capturer.mjs` : l'URL, Location, Authorization et Cookie ne portent plus de jeton dans la capture (TF-2107)
 
 - **Effet** : même classe que TF-2095. Une capture versionnée ne garde plus en clair : les paramètres de forme

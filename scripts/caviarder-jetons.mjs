@@ -3,6 +3,8 @@
 // donc un jeton en clair dans l'URL capturée, dans Location, dans Authorization, Proxy-Authorization ou Cookie
 // y ferait entrer un secret réel. On caviarde avant d'écrire ; le nom, la forme et les paramètres sans jeton restent,
 // car oracle-exposition ne juge que les en-têtes de sécurité et le schéma (http/https) de l'URL.
+// TF-2133 : Content-Location, Link, Refresh, X-Auth-Token et WWW-Authenticate sont caviardés aussi, et une URL ou une
+// liste de paramètres imbriquée dans une valeur (redirect_uri=…%3Fcode%3D…) est décodée avant d'être jugée.
 import { CAVIARDE, caviarderSetCookie } from "./caviarder-cookies.mjs";
 
 // Un nom de paramètre est « de forme jeton » s'il est dans la liste exacte ou s'il s'y termine par un mot-jeton.
@@ -28,8 +30,35 @@ function caviarderParametres(liste) {
     const i = p.indexOf("=");
     if (i < 0) return p;
     const nom = p.slice(0, i).replace(/^.*[?/]/, "");
-    return estNomDeJeton(nom) ? `${p.slice(0, i)}=${CAVIARDE}` : p;
+    return estNomDeJeton(nom) ? `${p.slice(0, i)}=${CAVIARDE}` : `${p.slice(0, i + 1)}${caviarderValeurImbriquee(p.slice(i + 1))}`;
   }).join("&");
+}
+
+// TF-2133 : la valeur d'un paramètre sans nom de jeton peut elle-même être une URL ou une liste de paramètres,
+// souvent percent-encodée (redirect_uri=https%3A%2F%2F…%3Fcode%3D…). On la décode (3 niveaux au plus) AVANT de juger ses
+// paramètres, on la caviarde, puis on la ré-encode au même niveau ; le marqueur reste lisible. Une valeur qui ne change
+// pas sort telle qu'elle est entrée, octet pour octet (pas de ré-encodage d'une valeur sans jeton).
+const MARQUE = CAVIARDE;
+function caviarderValeurImbriquee(valeur) {
+  let decodee = valeur;
+  let niveaux = 0;
+  while (niveaux < 3) {
+    let suite;
+    try { suite = decodeURIComponent(decodee); } catch { break; } // pourcentage mal formé : on s'arrête là
+    if (suite === decodee) break;
+    decodee = suite;
+    niveaux++;
+  }
+  let caviardee;
+  if (/^[a-z][a-z0-9+.-]*:\/\/|^\/|[?#]/i.test(decodee)) caviardee = caviarderUrl(decodee);
+  else if (/^[\w.%-]+=[^=]/.test(decodee)) caviardee = caviarderParametres(decodee);
+  else return valeur;
+  if (caviardee === decodee) return valeur;
+  return caviardee.split(MARQUE).map((morceau) => {
+    let m = morceau;
+    for (let n = 0; n < niveaux; n++) m = encodeURIComponent(m);
+    return m;
+  }).join(MARQUE);
 }
 
 // Une URL, absolue ou relative (Location) : identifiants « user:mot-de-passe@ », paramètres de chemin
@@ -59,6 +88,39 @@ export function caviarderAutorisation(entree) {
   return m ? `${m[1]} ${CAVIARDE}` : CAVIARDE;
 }
 
+// Content-Location est une URL ; Link porte des « <URL> » (et un éventuel anchor="URL") ; Refresh « délai; url=URL »
+// (le « url= » est facultatif). Les URL passent par caviarderUrl, le reste de la valeur sort tel quel (TF-2133).
+export function caviarderLien(entree) {
+  if (Array.isArray(entree)) return entree.map((v) => caviarderLien(v));
+  return String(entree)
+    .replace(/<([^>]*)>/g, (m, u) => `<${caviarderUrl(u)}>`)
+    .replace(/(\banchor\s*=\s*")([^"]*)(")/gi, (m, a, u, f) => `${a}${caviarderUrl(u)}${f}`);
+}
+
+export function caviarderRefresh(entree) {
+  if (Array.isArray(entree)) return entree.map((v) => caviarderRefresh(v));
+  const s = String(entree);
+  const m = /^(\s*[\d.]*\s*[;,]\s*(?:url\s*=\s*)?["']?)([^"']*)(["']?\s*)$/i.exec(s);
+  return m ? `${m[1]}${caviarderUrl(m[2])}${m[3]}` : s;
+}
+
+// WWW-Authenticate : défis « schéma jeton68 » ou « schéma nom=valeur, … ». Restent : schémas, realm, error, scope, qop.
+// Sont remplacés : un jeton68 nu (Negotiate), la valeur d'un paramètre de nom de jeton ou de défi (nonce, opaque…),
+// et l'URL à jeton d'une valeur qui en est une (resource_metadata, error_uri…).
+const NOMS_DEFI = new Set(["nonce", "cnonce", "nextnonce", "opaque", "response", "rspauth"]);
+export function caviarderDefi(entree) {
+  if (Array.isArray(entree)) return entree.map((v) => caviarderDefi(v));
+  return String(entree)
+    .replace(/(^|,\s*)([A-Za-z][A-Za-z0-9!#$%&'*+.^_`|~-]*)\s+[A-Za-z0-9\-._~+/]+=*(?=\s*(?:,|$))/g, (m, sep, schema) => `${sep}${schema} ${CAVIARDE}`)
+    .replace(/([A-Za-z][A-Za-z0-9_.-]*)(\s*=\s*)("(?:[^"\\]|\\.)*"|[^\s,"]*)/g, (m, nom, egal, valeur) => {
+      const cite = valeur.startsWith('"');
+      const interieur = cite ? valeur.slice(1, -1) : valeur;
+      if (estNomDeJeton(nom) || NOMS_DEFI.has(nom.toLowerCase())) return `${nom}${egal}${cite ? `"${CAVIARDE}"` : CAVIARDE}`;
+      if (/:\/\/|^\//.test(interieur)) return `${nom}${egal}${cite ? `"${caviarderUrl(interieur)}"` : caviarderUrl(interieur)}`;
+      return m;
+    });
+}
+
 // En-tête Cookie : « nom=valeur; nom=valeur ». Chaque paire passe par le caviardage de TF-2095.
 export function caviarderCookieRequete(entree) {
   if (Array.isArray(entree)) return entree.map((v) => caviarderCookieRequete(v));
@@ -73,7 +135,11 @@ export function caviarderEnTetes(headers) {
     if (cle === "set-cookie") sortie[nom] = caviarderSetCookie(valeur);
     else if (cle === "cookie") sortie[nom] = caviarderCookieRequete(valeur);
     else if (cle === "authorization" || cle === "proxy-authorization") sortie[nom] = caviarderAutorisation(valeur);
-    else if (cle === "location") sortie[nom] = Array.isArray(valeur) ? valeur.map((v) => caviarderUrl(v)) : caviarderUrl(valeur);
+    else if (cle === "location" || cle === "content-location") sortie[nom] = Array.isArray(valeur) ? valeur.map((v) => caviarderUrl(v)) : caviarderUrl(valeur);
+    else if (cle === "link") sortie[nom] = caviarderLien(valeur);
+    else if (cle === "refresh") sortie[nom] = caviarderRefresh(valeur);
+    else if (cle === "x-auth-token") sortie[nom] = Array.isArray(valeur) ? valeur.map(() => CAVIARDE) : CAVIARDE;
+    else if (cle === "www-authenticate") sortie[nom] = caviarderDefi(valeur);
     else sortie[nom] = valeur;
   }
   return sortie;

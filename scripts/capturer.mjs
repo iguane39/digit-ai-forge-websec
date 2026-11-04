@@ -7,6 +7,7 @@
 // La VALEUR des cookies posés est caviardée à la capture (TF-2095) : nom et attributs sont conservés.
 // Les autres porteurs de jeton le sont aussi (TF-2107) : paramètres de forme jeton de l'URL et de Location,
 // Authorization, Proxy-Authorization, Cookie. Le message d'échec ne recopie pas non plus l'URL en clair.
+// TF-2133 : Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate et les URL imbriquées/encodées aussi.
 // Usage : node capturer.mjs <url> [--sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]
 import fs from "node:fs";
 import { caviarderSetCookie } from "./caviarder-cookies.mjs";
