@@ -5,6 +5,24 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-04 — `scripts/capturer.mjs` : l'URL, Location, Authorization et Cookie ne portent plus de jeton dans la capture (TF-2107)
+
+- **Effet** : même classe que TF-2095. Une capture versionnée ne garde plus en clair : les paramètres de forme
+  jeton de l'URL capturée et de l'en-tête `Location` (`token`, `access_token`, `id_token`, `code`, `key`, `apikey`,
+  `signature`, `sig`, `session`, `sid`, `jwt`, `secret`, `password`, tout nom qui se termine par `token`, `secret`,
+  `key`, `signature`, `password` ou `session`), dans la requête, le fragment et les paramètres de chemin
+  (`;jsessionid=`) ; l'identifiant `utilisateur:mot-de-passe@` d'une URL ; la valeur d'`Authorization` et de
+  `Proxy-Authorization` (le schéma `Bearer`, `Basic`, `Digest` reste) ; les valeurs d'un en-tête `Cookie`. Les
+  paramètres sans jeton (`state`, `lang`, `token_type`, `page`) et tous les autres en-têtes sortent octet pour octet.
+- **Où** : `scripts/caviarder-jetons.mjs` (nouveau, réutilise le caviardage de TF-2095), appelé par
+  `scripts/capturer.mjs` ; le message d'échec de capture ne recopie plus non plus le jeton de l'URL demandée.
+  Les captures déjà écrites ne sont pas réécrites.
+- **oracle-exposition** : aucune règle ni `VERSION` ne change, il ne lit de l'URL que le schéma. Vérifié : la
+  capture caviardée est jugée comme avant (EX-1) et aucun secret n'entre dans son verdict.
+- **Preuve** : `oracles/self-test.mjs` rejoue le vrai `capturer.mjs` contre une origine locale qui répond 302 avec
+  chaque porteur en clair. Sens rouge mesuré avant le câblage : 89 PASS, 10 FAIL (les 5 porteurs, 4 contrôles
+  vert, le message d'échec) ; après : 99 PASS, 0 FAIL. 16 contrôles ajoutés.
+
 ## 2026-11-03 — `referentiels/revue-de-code.md` 1.0.0 (TF-2057, D-162 (a))
 
 - **Nouveau référentiel** : la consigne type d'une revue de code par un seul agent, le plafond de

@@ -437,6 +437,106 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2095 : valeur des coo
   }
 }
 
+// ── TF-2107 · la capture ne garde AUCUN autre porteur de jeton (même classe que TF-2095) ──────────
+// Après la valeur des cookies posés, restent l'URL capturée, Location, Authorization, Proxy-Authorization,
+// Cookie et les paramètres d'URL de forme jeton. Le banc sert une réponse 302 d'une origine locale qui porte
+// chaque porteur avec un secret reconnaissable, lance le VRAI capturer.mjs contre une URL à jetons, puis juge :
+// ROUGE si un secret survit dans le fichier, la sortie standard ou les messages ; VERT si la capture reste
+// exploitable (statut, schéma, paramètres sans jeton, autres en-têtes) et que oracle-exposition la juge encore.
+console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2107 : URL, Location, Authorization, Cookie caviardés à la capture)\n");
+{
+  const CAPTURER = path.join(HERE, "..", "scripts", "capturer.mjs");
+  const PORTEURS = {
+    "URL capturée": ["SECRET-ACCESS-91f0", "SECRET-APIKEY-7777", "SECRET-SIGNATURE-d4d4", "SECRET-SESSION-0b0b"],
+    "Location": ["SECRET-CODE-3b7e", "SECRET-IDTOKEN-aa19", "SECRET-JSESSION-5e5e", "SECRET-USERINFO-pw"],
+    "Authorization": ["SECRET-AUTHORIZATION-71c4"],
+    "Proxy-Authorization": ["SECRET-PROXY-c0ffee12"],
+    "Cookie": ["SECRET-COOKIE-REQ-5d2b", "SECRET-COOKIE-PREF-88aa"],
+    "Set-Cookie": ["SECRET-SETCOOKIE-1a2b"],
+  };
+  const TOUS = Object.values(PORTEURS).flat();
+  const origine = http.createServer((req, res) => {
+    res.statusCode = 302;
+    res.setHeader("Location", "https://SECRET-USERINFO-pw@sso.exemple.test/callback;jsessionid=SECRET-JSESSION-5e5e?code=SECRET-CODE-3b7e&state=ok&lang=fr#id_token=SECRET-IDTOKEN-aa19&token_type=Bearer");
+    res.setHeader("Authorization", "Bearer SECRET-AUTHORIZATION-71c4");
+    res.setHeader("Proxy-Authorization", "Basic SECRET-PROXY-c0ffee12");
+    res.setHeader("Cookie", "sid=SECRET-COOKIE-REQ-5d2b; pref=SECRET-COOKIE-PREF-88aa");
+    res.setHeader("Set-Cookie", "session=SECRET-SETCOOKIE-1a2b; Path=/; HttpOnly");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.end("");
+  });
+  await new Promise((r) => origine.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${origine.address().port}/`;
+  const urlJetons = `${base}?access_token=SECRET-ACCESS-91f0&apikey=SECRET-APIKEY-7777&signature=SECRET-SIGNATURE-d4d4&session=SECRET-SESSION-0b0b&page=2`;
+  const urlAttendue = `${base}?access_token=[caviardé]&apikey=[caviardé]&signature=[caviardé]&session=[caviardé]&page=2`;
+  const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-jetons-"));
+  const lancer = (cible, args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, cible, ...args], { encoding: "utf8", timeout: 30000 },
+    (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+  try {
+    const fichier = path.join(tmpCap, "capture.json");
+    const viaFichier = await lancer(urlJetons, ["--sortie", fichier]);
+    const brut = fs.existsSync(fichier) ? fs.readFileSync(fichier, "utf8") : "";
+    const viaStdout = await lancer(urlJetons, []);
+    ok(viaFichier.code === 0 && viaStdout.code === 0 && brut.length > 0,
+      `capturer.mjs capture l'origine locale à jetons (302, redirection non suivie), par fichier et par sortie standard (codes ${viaFichier.code} / ${viaStdout.code})`);
+    // ROUGE : par porteur, aucun secret ne survit ni dans le fichier, ni sur la sortie standard, ni dans les messages.
+    const sortie = brut + viaStdout.stdout + viaFichier.stderr + viaStdout.stderr;
+    for (const [porteur, secrets] of Object.entries(PORTEURS)) {
+      const survivants = secrets.filter((s) => sortie.includes(s));
+      ok(survivants.length === 0, `ROUGE · porteur « ${porteur} » caviardé à la capture (secrets survivants : ${survivants.length}/${secrets.length})`);
+    }
+    // VERT : la capture reste exploitable, seules les valeurs de jeton sont remplacées.
+    let cap = null;
+    try { cap = JSON.parse(brut); } catch { /* les contrôles suivants le disent */ }
+    const h = cap?.headers ?? {};
+    ok(cap?.url === urlAttendue,
+      `VERT · l'URL capturée garde schéma, hôte, chemin et paramètre sans jeton (page=2), les 4 jetons sont remplacés (obtenu ${cap?.url})`);
+    ok(h.location === "https://[caviardé]@sso.exemple.test/callback;jsessionid=[caviardé]?code=[caviardé]&state=ok&lang=fr#id_token=[caviardé]&token_type=Bearer",
+      `VERT · Location garde sa forme (hôte, chemin, state, lang, token_type), seuls l'identifiant, jsessionid, code et id_token sont remplacés (obtenu ${h.location})`);
+    ok(h.authorization === "Bearer [caviardé]" && h["proxy-authorization"] === "Basic [caviardé]",
+      "VERT · Authorization et Proxy-Authorization gardent le schéma (Bearer, Basic), les justificatifs sont remplacés");
+    ok(h.cookie === "sid=[caviardé]; pref=[caviardé]" && Array.isArray(h["set-cookie"]) && h["set-cookie"][0] === "session=[caviardé]; Path=/; HttpOnly",
+      "VERT · Cookie garde les noms de ses paires ; Set-Cookie garde nom et attributs (TF-2095 inchangé)");
+    ok(cap?.status === 302 && h["x-content-type-options"] === "nosniff" && cap?.redirections_suivies === false,
+      "VERT · le reste de la capture (statut, autre en-tête, drapeau de redirection) est intact");
+    // Exploitable : oracle-exposition juge cette capture (EX-1, pas de CSP) et ne recopie aucun secret.
+    const jug = runJson(ORACLE_EXPOSITION, [fichier]);
+    ok(jug.verdict === "FAIL" && aRegle(jug, "EX-1") && !TOUS.some((s) => JSON.stringify(jug).includes(s)),
+      `VERT · la capture caviardée reste exploitable : oracle-exposition la juge (EX-1) sans recopier de secret (obtenu ${jug.verdict})`);
+    // Un échec de capture ne réécrit pas l'URL à jetons sur la sortie d'erreur.
+    const libre = http.createServer(); await new Promise((r) => libre.listen(0, "127.0.0.1", r));
+    const portMort = libre.address().port; await new Promise((r) => libre.close(r));
+    const echec = await lancer(`http://127.0.0.1:${portMort}/?access_token=SECRET-ECHEC-e3e3&page=2`, []);
+    ok(echec.code === 1 && /capture échouée/.test(echec.stderr) && !echec.stderr.includes("SECRET-ECHEC-e3e3") && echec.stderr.includes("page=2"),
+      `ROUGE · le message d'échec ne recopie pas le jeton de l'URL demandée, l'URL reste reconnaissable (code ${echec.code})`);
+    // Bords du caviardage : URL relative, fragment-route, nom encodé, casse, paramètre sans valeur, idempotence.
+    const { caviarderUrl, caviarderAutorisation, caviarderCookieRequete, caviarderEnTetes } =
+      await import(pathToFileURL(path.join(HERE, "..", "scripts", "caviarder-jetons.mjs")).href);
+    const bordsUrl = [
+      ["/relatif?Access_Token=1&x=2", "/relatif?Access_Token=[caviardé]&x=2"],
+      ["https://h.test/#/cb?token=9&a=1", "https://h.test/#/cb?token=[caviardé]&a=1"],
+      ["https://h.test/p?api%5Fkey=9&x-api-key=8&X-Amz-Signature=7&Sig=6", "https://h.test/p?api%5Fkey=[caviardé]&x-api-key=[caviardé]&X-Amz-Signature=[caviardé]&Sig=[caviardé]"],
+      ["https://h.test/p?token=&k&jwt=a=b", "https://h.test/p?token=[caviardé]&k&jwt=[caviardé]"],
+      ["https://h.test/p?token_type=x&state=y&lang=fr&page=3&sortkey=", "https://h.test/p?token_type=x&state=y&lang=fr&page=3&sortkey=[caviardé]"],
+      ["https://h.test/p/a?x=1", "https://h.test/p/a?x=1"],
+      ["", ""],
+    ];
+    const ecartsUrl = bordsUrl.filter(([e, s]) => caviarderUrl(e) !== s || caviarderUrl(caviarderUrl(e)) !== s).map(([e]) => e);
+    ok(ecartsUrl.length === 0, `bords du caviardage d'URL : relative, fragment-route, nom encodé, casse, sans valeur, sans jeton, vide, idempotent (écarts : ${ecartsUrl.length}${ecartsUrl.length ? " · " + ecartsUrl[0] : ""})`);
+    const bordsAuth = [["Bearer abc.def", "Bearer [caviardé]"], ["abc", "[caviardé]"], [' Basic  Zm9v ', "Basic [caviardé]"], ['Digest username="a", response="x"', "Digest [caviardé]"]];
+    const ecartsAuth = bordsAuth.filter(([e, s]) => caviarderAutorisation(e) !== s).map(([e]) => e);
+    const cookieOk = caviarderCookieRequete("a=b; c=d=e;") === "a=[caviardé]; c=[caviardé]" && caviarderCookieRequete(["x=1"])[0] === "x=[caviardé]";
+    const enTetes = caviarderEnTetes({ Authorization: "Bearer zz", LOCATION: "/x?code=1", "X-Autre": "garde?code=1", "Set-Cookie": ["s=1; Secure"] });
+    const enTetesOk = enTetes.Authorization === "Bearer [caviardé]" && enTetes.LOCATION === "/x?code=[caviardé]"
+      && enTetes["X-Autre"] === "garde?code=1" && enTetes["Set-Cookie"][0] === "s=[caviardé]; Secure";
+    ok(ecartsAuth.length === 0 && cookieOk && enTetesOk,
+      `bords des en-têtes : schéma d'Authorization gardé, justificatif nu, paires de Cookie, noms d'en-tête sans casse, en-tête hors liste intact (écarts : ${ecartsAuth.length}, Cookie ${cookieOk}, en-têtes ${enTetesOk})`);
+  } finally {
+    origine.close();
+    fs.rmSync(tmpCap, { recursive: true, force: true });
+  }
+}
+
 // ── TF-1319 · la découverte des oracles LIT LE DISQUE, dans les deux sens ─────────────────────
 // Le juge du pilot (méta-oracle d'enclenchement) confronte ce que cette forge DÉCOUVRE aux
 // verdicts consignés au ledger d'un run. Une découverte qui raterait un oracle le rendrait

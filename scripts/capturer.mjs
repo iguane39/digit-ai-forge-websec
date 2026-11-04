@@ -5,9 +5,12 @@
 // automatiquement (--suivre-redirections pour les suivre) : la configuration de sécurité
 // jugée doit être celle de la réponse réellement obtenue, pas d'une destination en aval.
 // La VALEUR des cookies posés est caviardée à la capture (TF-2095) : nom et attributs sont conservés.
+// Les autres porteurs de jeton le sont aussi (TF-2107) : paramètres de forme jeton de l'URL et de Location,
+// Authorization, Proxy-Authorization, Cookie. Le message d'échec ne recopie pas non plus l'URL en clair.
 // Usage : node capturer.mjs <url> [--sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]
 import fs from "node:fs";
 import { caviarderSetCookie } from "./caviarder-cookies.mjs";
+import { caviarderEnTetes, caviarderUrl } from "./caviarder-jetons.mjs";
 
 const args = process.argv.slice(2);
 const url = args.find((a) => !a.startsWith("--"));
@@ -49,9 +52,9 @@ try {
   if (setCookie.length) headers["set-cookie"] = caviarderSetCookie(setCookie);
 
   const capture = {
-    url,
+    url: caviarderUrl(url), // TF-2107 : un jeton passé en paramètre d'URL n'entre pas non plus dans la capture
     status: res.status,
-    headers,
+    headers: caviarderEnTetes(headers), // TF-2107 : Authorization, Proxy-Authorization, Cookie, Location (Set-Cookie : idempotent)
     capture_ts: new Date().toISOString(),
     redirections_suivies: suivreRedirections,
   };
@@ -65,6 +68,6 @@ try {
 } catch (e) {
   clearTimeout(minuteur);
   const motif = e.name === "AbortError" ? `délai dépassé (${timeoutMs}ms)` : e.message;
-  console.error(`capture échouée pour ${url} : ${motif}`);
+  console.error(`capture échouée pour ${caviarderUrl(url)} : ${motif}`);
   process.exit(1);
 }

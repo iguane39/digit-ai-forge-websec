@@ -65,7 +65,7 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 | Service | Intention (« je veux… ») | Point d'entrée | Statut |
 |---|---|---|---|
 | **Juger l'exposition HTTP d'une réponse** | connaître la configuration de sécurité (en-têtes, cookies) d'un produit avant sa MEP | `node oracles/oracle-exposition.mjs <capture.json>` | **prouvé** — 15 fixtures (`fixtures/exposition/`), 11 règles EX-1..EX-11 |
-| **Capturer une réponse HTTP réelle** | produire l'entrée de l'oracle d'exposition depuis une URL réelle | `node scripts/capturer.mjs <url> [--sortie <fichier>]` | **prouvé** (fetch natif, zéro dépendance) — ne juge rien, capture seulement ; la valeur des cookies posés est caviardée à la capture, nom et attributs gardés (TF-2095) |
+| **Capturer une réponse HTTP réelle** | produire l'entrée de l'oracle d'exposition depuis une URL réelle | `node scripts/capturer.mjs <url> [--sortie <fichier>]` | **prouvé** (fetch natif, zéro dépendance) — ne juge rien, capture seulement ; la valeur des cookies posés (TF-2095) et les autres porteurs de jeton (paramètres de forme jeton de l'URL et de Location, Authorization, Proxy-Authorization, Cookie, TF-2107) sont caviardés à la capture, noms et attributs gardés |
 | **Juger un fichier `_headers`** | savoir, avant de déployer sur Cloudflare (Workers static assets ou Pages), si les en-têtes que déclare mon `_headers` tiennent les règles EX | `node oracles/oracle-exposition-statique.mjs <_headers \| dossier>` | **prouvé** — règles EX-1..EX-11 réutilisées sans copie, HD-1 et HD-2 sourcées sur developers.cloudflare.com (lu le 28/10/2026), 8 fixtures (`fixtures/exposition-statique/`) |
 | **Juger les dépendances vulnérables** | savoir si les dépendances d'un produit portent des CVE connues | `node oracles/oracle-sca.mjs <dossier-cible>` | **prouvé** — npm (`npm audit`) et pip (`pip-audit`) enveloppés, fixtures vertes/rouges par écosystème, SKIP motivé si l'outillage ou le réseau manque |
 | **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | **partiellement prouvé** — garde-fou dual-use et lecture de rapport ZAP prouvés (13 fixtures, `fixtures/dast/`) ; **branche d'exécution ZAP non prouvée** faute de ZAP sur le poste (SKIP motivé) |
@@ -341,6 +341,7 @@ oracles/
 scripts/
   capturer.mjs            capture réelle fetch(url) → JSON d'entrée d'oracle-exposition
   caviarder-cookies.mjs   retire la valeur d'un Set-Cookie, nom et attributs gardés (appelé par capturer.mjs)
+  caviarder-jetons.mjs    retire les jetons de l'URL, de Location, d'Authorization et de Cookie (appelé par capturer.mjs)
 referentiels/
   asvs-l1.md              contrat de sécurité v0, sous-ensemble curé ASVS 5.0.0 niveau L1
   wstg-cas.md             méthode de test, 39 cas curés WSTG 4.2 rattachés à asvs-l1.md
