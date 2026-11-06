@@ -1,0 +1,36 @@
+# Fixture synthétique — sens rouge oracle-sca (poetry) : verrou poetry.lock avec une version ancienne
+# à CVE connues (django 1.4) et un paquet hors registre (git, bloc [package.source]).
+
+[[package]]
+name = "django"
+version = "1.4"
+description = "Fixture synthétique."
+optional = false
+python-versions = "*"
+files = [
+    {file = "Django-1.4.tar.gz", hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+]
+
+[package.dependencies]
+name = "ne-doit-pas-etre-lu"
+version = "9.9.9"
+
+[[package]]
+name = "paquet-git"
+version = "0.0.1"
+description = "Fixture synthétique."
+optional = false
+python-versions = "*"
+files = []
+develop = false
+
+[package.source]
+type = "git"
+url = "https://example.invalid/paquet-git.git"
+reference = "main"
+resolved_reference = "0000000000000000000000000000000000000000"
+
+[metadata]
+lock-version = "2.0"
+python-versions = "^3.11"
+content-hash = "0000000000000000000000000000000000000000000000000000000000000000"

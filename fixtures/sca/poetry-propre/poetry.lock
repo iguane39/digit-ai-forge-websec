@@ -1,0 +1,28 @@
+# Fixture synthétique — sens vert oracle-sca (poetry), jugé avec l'outil simulé : deux paquets de
+# registre sans avis.
+
+[[package]]
+name = "paquet-sain"
+version = "1.0.0"
+description = "Fixture synthétique."
+optional = false
+python-versions = "*"
+files = [
+    {file = "paquet_sain-1.0.0.tar.gz", hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+]
+
+[[package]]
+name = "autre-sain"
+version = "2.3.1"
+description = "Fixture synthétique."
+optional = false
+python-versions = "*"
+files = []
+
+[package.dependencies]
+paquet-sain = ">=1.0"
+
+[metadata]
+lock-version = "2.0"
+python-versions = "^3.11"
+content-hash = "0000000000000000000000000000000000000000000000000000000000000000"

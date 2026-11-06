@@ -1,0 +1,30 @@
+# Fixture synthétique — sens rouge oracle-sca (uv) : verrou uv.lock avec une version ancienne à CVE
+# connues (django 1.4), le projet lui-même (source virtual) et un paquet hors registre (git).
+version = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "demo-app"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "django" },
+    { name = "paquet-git" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "django", specifier = "==1.4" },
+    { name = "paquet-git", git = "https://example.invalid/paquet-git.git" },
+]
+
+[[package]]
+name = "django"
+version = "1.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://example.invalid/django-1.4.tar.gz", hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+
+[[package]]
+name = "paquet-git"
+version = "0.0.1"
+source = { git = "https://example.invalid/paquet-git.git?rev=0000000#0000000000000000000000000000000000000000" }

@@ -65,7 +65,7 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 - **Zéro API tierce payante, zéro dépendance npm.** Cinq oracles + un script de capture,
   Node natif (`.mjs`), aucune installation requise pour la partie propre à cette forge.
   `oracle-sca` et `oracle-dast` **délèguent** à l'outillage déjà présent sur le poste (npm,
-  pip-audit, OWASP ZAP) — ils ne l'installent jamais et ne dégradent jamais silencieusement
+  pip-audit ou uvx, OWASP ZAP) — ils ne l'installent jamais et ne dégradent jamais silencieusement
   leur verdict quand cet outillage manque (SKIP motivé, jamais un PASS par défaut).
 - **Zéro donnée réelle.** Dépôt public : toutes les fixtures sont synthétiques (URLs, cookies,
   dépendances fictives ou à CVE publique déjà connue) — aucune donnée client, aucun secret.
@@ -80,10 +80,10 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 | **Juger l'exposition HTTP d'une réponse** | connaître la configuration de sécurité (en-têtes, cookies) d'un produit avant sa MEP | `node oracles/oracle-exposition.mjs <capture.json>` | **prouvé** — 15 fixtures (`fixtures/exposition/`), 11 règles EX-1..EX-11 |
 | **Capturer une réponse HTTP réelle** | produire l'entrée de l'oracle d'exposition depuis une URL réelle | `node scripts/capturer.mjs <url> [--sortie <fichier>]` | **prouvé** (fetch natif, zéro dépendance) — ne juge rien, capture seulement ; la valeur des cookies posés (TF-2095) et les autres porteurs de jeton (paramètres de forme jeton de l'URL et de Location, Authorization, Proxy-Authorization, Cookie, TF-2107 ; Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate et le jeton caché dans une URL imbriquée ou percent-encodée, TF-2133) sont caviardés à la capture, noms et attributs gardés |
 | **Juger un fichier `_headers`** | savoir, avant de déployer sur Cloudflare (Workers static assets ou Pages), si les en-têtes que déclare mon `_headers` tiennent les règles EX | `node oracles/oracle-exposition-statique.mjs <_headers \| dossier>` | **prouvé** — règles EX-1..EX-11 réutilisées sans copie, HD-1 et HD-2 sourcées sur developers.cloudflare.com (lu le 28/10/2026), 8 fixtures (`fixtures/exposition-statique/`) |
-| **Juger les dépendances vulnérables** | savoir si les dépendances d'un produit portent des CVE connues | `node oracles/oracle-sca.mjs <dossier-cible>` | **prouvé** — npm (`npm audit`) et pip (`pip-audit`) enveloppés, fixtures vertes/rouges par écosystème, SKIP motivé si l'outillage ou le réseau manque |
+| **Juger les dépendances vulnérables** | savoir si les dépendances d'un produit portent des CVE connues | `node oracles/oracle-sca.mjs <dossier-cible>` | **prouvé** — npm (`npm audit`) et pip (`pip-audit`, ou `uvx pip-audit` ; `requirements.txt`, `uv.lock`, `poetry.lock`) enveloppés, fixtures vertes/rouges par écosystème, SKIP rendu comme un manque nommé si l'outillage ou le réseau manque |
 | **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | **partiellement prouvé** — garde-fou dual-use et lecture de rapport ZAP prouvés (13 fixtures, `fixtures/dast/`) ; **branche d'exécution ZAP non prouvée** faute de ZAP sur le poste (SKIP motivé) |
 | **Juger les workflows GitHub Actions** | savoir si les workflows qui construisent et livrent mon produit donnent trop de droits, exécutent du code non épinglé ou injectable | `node oracles/oracle-workflows.mjs <dépôt \| dossier \| fichier.yml>` | **prouvé** — 5 règles WF-1..WF-5 sourcées sur docs.github.com (lu le 28/10/2026), 15 fichiers de fixtures (`fixtures/workflows/`), lecteur YAML natif identique à PyYAML sur 30 fichiers le 28/10/2026 |
-| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 77 PASS, 0 FAIL à la dernière exécution connue (28/10/2026), dont le volet SCA dépendant de l'outillage réel du poste |
+| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 138 PASS, 0 FAIL, 1 SKIP motivé à la dernière exécution (06/11/2026), dont le volet SCA dépendant de l'outillage réel du poste |
 
 ### `oracle-exposition.mjs` — 11 règles EX-1..EX-11
 
@@ -141,16 +141,38 @@ réglée au niveau de la zone. Le site déployé se confirme par `capturer.mjs` 
 | Écosystème | Manifeste requis | Outil délégué | Seuil par défaut |
 |---|---|---|---|
 | npm | `package.json` + `package-lock.json` | `npm audit --package-lock-only --json` (déjà présent, aucune installation) | `critical=0`, `high=0` |
-| pip | `requirements.txt` | `pip-audit -r requirements.txt --format json` | `vulnerabilites=0` (paquets touchés) |
+| pip | `requirements.txt`, `uv.lock` ou `poetry.lock` | `pip-audit -r <requirements> --format json`, sinon `uvx pip-audit` | `vulnerabilites=0` (paquets touchés) |
 
 ```
 node oracles/oracle-sca.mjs <dossier-cible> [--seuils <fichier.json>]
 ```
 
+Un verrou `uv.lock` ou `poetry.lock` est lu par l'oracle (blocs `[[package]]`, `name` et
+`version`) ; ses paquets de registre sont écrits épinglés dans un requirements temporaire,
+hors de la cible, puis audités avec `--no-deps --disable-pip` : rien n'est résolu ni installé,
+l'audit prend quelques secondes. Le projet lui-même (source `virtual` ou `editable` d'`uv`)
+n'est pas une dépendance ; un paquet d'un autre type de source (git, chemin, URL, index privé)
+n'est pas interrogeable et se nomme au manque. Deux versions du même nom (marqueurs de
+résolution) sont auditées en deux lots, `pip-audit` refusant le doublon dans un fichier.
+
+Quand `pip-audit` est absent du poste, l'oracle le lance par `uvx pip-audit` si `uvx` est
+présent : `uvx` l'exécute dans un environnement isolé de son cache, sans installation globale
+(l'oracle n'installe toujours rien). Le champ `synthese.pip.outil` dit quelle voie a servi.
+
+Un `SKIP` se rend comme un **manque nommé** (TF-2272) : le champ `manques` liste, par
+manifeste non audité, l'écosystème, la cause (outil absent, audit indisponible, format non
+reconnu, paquets hors registre) et le remède ; sur un `SKIP`, le champ `motif` le dit en une
+phrase (« AUDIT NON JOUÉ, aucune dépendance jugée (ce n'est pas un PASS) — manque : … »). Une
+porte de production qui lit un `SKIP` lit donc que l'audit n'a pas eu lieu, et pourquoi. Un
+`PASS` peut porter des `manques` partiels (paquets hors registre) : ils restent dans les
+`findings` (`SCA-SKIP`, sévérité `info`).
+
 Sans manifeste exploitable NI outil disponible pour un manifeste présent : verdict `SKIP`
 motivé, jamais un `PASS` silencieux — c'est une règle dure du mandat (TF-0123). Le champ
 `seuils_appliques` de la sortie dit toujours si le seuil vient d'un fichier `--seuils` ou du
-défaut embarqué.
+défaut embarqué. `WEBSEC_SCA_PIP_AUDIT` et `WEBSEC_SCA_UVX` désignent une commande à la place
+de `pip-audit` / `uvx` (un chemin `.mjs` est joué par node ; un chemin injouable simule
+l'absence) : c'est ce que la recette emploie pour rejouer les deux voies sans rien installer.
 
 ### `oracle-dast.mjs` — enveloppe OWASP ZAP, garde-fou dual-use fail-closed
 
@@ -314,8 +336,12 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
   elle ne remplace ni un audit de sécurité humain, ni un test d'intrusion. `wstg-cas.md`
   décrit une **méthode**, il ne l'exécute pas : 31 de ses 39 cas sont manuels.
 - **`oracle-sca` dépend du poste.** Aucun outil SCA n'est installé par cette forge ; si
-  aucun de npm/pip-audit n'est présent (ou si le réseau vers leur base d'avisos est
-  injoignable), le verdict est `SKIP` motivé — jamais un `PASS` faute de preuve.
+  aucun de npm/pip-audit/uvx n'est présent (ou si le réseau vers leur base d'avisos est
+  injoignable), le verdict est `SKIP` motivé, rendu comme un manque nommé — jamais un `PASS`
+  faute de preuve. Les verrous `uv.lock` et `poetry.lock` sont audités paquet par paquet de
+  registre ; les paquets d'une autre source (git, chemin, URL, index privé) ne le sont pas.
+  Un paquet que `pip-audit` lui-même ne trouve pas sur PyPI et saute (`skip_reason`) compte au
+  total sans être jugé : l'oracle ne le nomme pas encore.
   `osv-scanner` (multi-écosystème) n'est **pas** enveloppé en v0, faute de poste équipé pour
   le prouver par fixture.
 - **`oracle-workflows` lit des fichiers, pas un dépôt GitHub.** Il ne voit ni la visibilité du
@@ -347,7 +373,7 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
 oracles/
   oracle-exposition.mjs   juge une capture HTTP {url,status,headers} — 11 règles EX-1..EX-11 (exportées)
   oracle-exposition-statique.mjs  juge un fichier _headers de Cloudflare — règles EX réutilisées, HD-1, HD-2
-  oracle-sca.mjs          enveloppe npm audit / pip-audit en verdict machine normalisé
+  oracle-sca.mjs          enveloppe npm audit / pip-audit (ou uvx pip-audit ; uv.lock, poetry.lock) en verdict machine normalisé
   oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils
   oracle-workflows.mjs    juge les workflows GitHub Actions — 5 règles WF-1..WF-5, lecteur YAML natif
   self-test.mjs           rejeu intégral à double sens (77 contrôles)
@@ -363,7 +389,7 @@ referentiels/
 fixtures/
   exposition/             15 fixtures JSON (vertes + rouges) pour oracle-exposition
   exposition-statique/    8 fichiers _headers synthétiques : 1 vert, 7 rouges (EX par sonde, HD-1, HD-2)
-  sca/                    manifestes npm/pip synthétiques (vulnérables + propres) + cas SKIP
+  sca/                    manifestes npm/pip/uv/poetry synthétiques (vulnérables + propres) + cas SKIP, et outils/outil-simule.mjs (pip-audit et uvx simulés)
   dast/                   autorisations synthétiques (valide/expirée/production/incomplète),
                           rapports ZAP synthétiques (propre/vulnérable), seuils desserrés
   workflows/              workflows synthétiques : 2 verts, 9 rouges (une par règle au moins),

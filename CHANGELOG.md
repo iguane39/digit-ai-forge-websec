@@ -5,6 +5,32 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-06 — `oracle-sca` 0.2.0 : uv.lock, poetry.lock, uvx, et un SKIP qui nomme son manque (TF-2272)
+
+- **Effet** : sur un produit Python géré par `uv` ou `poetry` (`pyproject.toml` + verrou, sans `requirements.txt`),
+  l'oracle rendait « aucun manifeste reconnu » puis, avec un `requirements.txt` exporté, un SKIP faute de
+  `pip-audit`. Il lit maintenant `uv.lock` et `poetry.lock`, audite leurs paquets de registre, lance `pip-audit` par
+  `uvx pip-audit` quand `pip-audit` est absent et `uvx` présent, et rend tout SKIP comme un manque nommé.
+- **Verrous** : blocs `[[package]]`, clés `name` et `version` de tête de bloc. Les paquets sont écrits épinglés dans un
+  requirements temporaire hors de la cible puis audités avec `--no-deps --disable-pip` (2,5 s mesurées contre 110 s
+  pour `pip-audit -r` qui résout dans un environnement isolé). Le projet lui-même (`source` `virtual` ou `editable`)
+  n'est pas une dépendance ; un paquet git, chemin, URL ou index privé n'est pas interrogeable et se nomme au manque.
+  Deux versions du même nom (marqueurs de résolution) passent en deux lots : `pip-audit` refuse le doublon, mesuré.
+- **Manque nommé** : sortie enrichie du champ `manques` (écosystème, manifeste, cause, remède) et, sur un SKIP, du
+  champ `motif` (« AUDIT NON JOUÉ, aucune dépendance jugée (ce n'est pas un PASS) — manque : … »). Un délai dépassé se
+  dit (« délai de 90 s dépassé ») au lieu de « sortie vide ». Verdicts, codes de sortie et seuils inchangés.
+- **Surcharge pour la recette** : `WEBSEC_SCA_PIP_AUDIT` et `WEBSEC_SCA_UVX` désignent la commande à lancer à la place de
+  `pip-audit` / `uvx` ; `fixtures/sca/outils/outil-simule.mjs` joue les deux sans réseau ni installation.
+- **Où** : `oracles/oracle-sca.mjs` (`VERSION` 0.1.0 → 0.2.0), `oracles/self-test.mjs`, `fixtures/sca/`.
+- **Preuve** : `node oracles/self-test.mjs` rejoué sur l'ancien `oracle-sca.mjs` avec les nouveaux cas : 119 PASS,
+  16 FAIL (les 16 nouveaux cas, tous en SKIP « aucun manifeste reconnu » ou sans champ `manques`). Avec le nouveau :
+  138 PASS, 0 FAIL, 1 SKIP motivé (`pip-audit -r requirements.txt` sur la fixture `pip-vulnerable` dépasse le délai de
+  90 s sur ce poste, antérieur à ce changement). 19 contrôles ajoutés, dont 3 avec l'outil réel (`pip-audit`, puis
+  `uvx` réel avec `pip-audit` déclaré absent).
+- **Limite dite** : un paquet que `pip-audit` saute lui-même (`skip_reason`) compte au total sans être nommé ; la copie
+  d'`oracle-sca` de `digit-ai-forge-agents` (`.claude/skills/quality-oracles/scripts/oracle-sca.mjs`) est un autre code
+  et n'est pas touchée.
+
 ## 2026-11-04 — `scripts/capturer.mjs` : cinq en-têtes de plus et l'URL encodée ne portent plus de jeton dans la capture (TF-2133)
 
 - **Effet** : même classe que TF-2107. Une capture versionnée ne garde plus en clair : les URL de `Content-Location`,

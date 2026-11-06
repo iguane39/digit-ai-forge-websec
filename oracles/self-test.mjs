@@ -32,8 +32,8 @@ let pass = 0, echec = 0, note = 0;
 const ok = (b, m) => { console.log(`  [${b ? "PASS" : "FAIL"}] ${m}`); b ? pass++ : echec++; };
 const skipNote = (m) => { console.log(`  [SKIP] ${m}`); note++; };
 
-function runJson(script, args) {
-  try { return JSON.parse(execFileSync(process.execPath, [script, ...args, "--json-only"], { encoding: "utf8", timeout: 120000 })); }
+function runJson(script, args, env) {
+  try { return JSON.parse(execFileSync(process.execPath, [script, ...args, "--json-only"], { encoding: "utf8", timeout: 120000, ...(env ? { env: { ...process.env, ...env } } : {}) })); }
   catch (e) { try { return JSON.parse(String(e.stdout)); } catch { return { verdict: "ILLISIBLE", findings: [], _stderr: String(e.stderr || e) }; } }
 }
 function aRegle(res, regle) { return (res.findings || []).some((f) => f.regle === regle); }
@@ -128,6 +128,107 @@ if (!pipDispo) {
 {
   const r = runJson(ORACLE_SCA, [FX("sca", "npm-clean"), "--seuils", FX("sca", "seuils-n-existent-pas.json")]);
   ok(r.verdict === "FAIL", `--seuils pointant un fichier introuvable → FAIL (aucun défaut implicite) (obtenu ${r.verdict})`);
+}
+
+// ── verrous uv.lock / poetry.lock, uvx, manque nommé (TF-2272) ──────────────────
+// Déterministe : un outil SIMULÉ (fixtures/sca/outils/outil-simule.mjs) joue pip-audit et
+// `uvx pip-audit`, désigné par WEBSEC_SCA_PIP_AUDIT / WEBSEC_SCA_UVX ; rien n'est installé, rien
+// ne passe par le réseau. Un chemin injouable simule l'absence de l'outil.
+{
+  const SIM = FX("sca", "outils", "outil-simule.mjs");
+  const ABSENT = path.join(os.tmpdir(), "websec-outil-absent");
+  const traceDir = fs.mkdtempSync(path.join(os.tmpdir(), "websec-sca-trace-"));
+  const trace = path.join(traceDir, "appels.jsonl");
+  // dossier temporaire PROPRE à ces cas : on y lit où l'oracle écrit son requirements dérivé, et qu'il l'efface
+  const tmpOracle = path.join(traceDir, "tmp");
+  fs.mkdirSync(tmpOracle);
+  const tmpEnv = { TEMP: tmpOracle, TMP: tmpOracle, TMPDIR: tmpOracle };
+  const lireTrace = () => (fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+  const viaUvx = { WEBSEC_SCA_PIP_AUDIT: ABSENT, WEBSEC_SCA_UVX: SIM, WEBSEC_SIM_TRACE: trace, ...tmpEnv };
+  const direct = { WEBSEC_SCA_PIP_AUDIT: SIM, WEBSEC_SCA_UVX: ABSENT, WEBSEC_SIM_TRACE: trace, ...tmpEnv };
+  const rien = { WEBSEC_SCA_PIP_AUDIT: ABSENT, WEBSEC_SCA_UVX: ABSENT };
+  const causes = (r) => (r.manques || []).map((m) => m.cause).join(" | ");
+
+  let r = runJson(ORACLE_SCA, [FX("sca", "uv-vulnerable")], viaUvx);
+  ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && (r.findings || []).some((f) => f.regle === "SCA-PIP" && /django 1\.4/.test(f.msg)),
+    `uv.lock avec django 1.4, pip-audit absent, uvx présent → FAIL avec SCA-PIP sur django 1.4 (obtenu ${r.verdict})`);
+  ok(r.synthese && r.synthese.pip && r.synthese.pip.outil === "uvx pip-audit" && r.synthese.pip.total_paquets === 1,
+    `uv.lock : le projet (source virtual) et le paquet git ne sont pas audités, 1 paquet de registre jugé via « uvx pip-audit » (obtenu ${JSON.stringify(r.synthese && r.synthese.pip)})`);
+  ok(/paquet-git/.test(causes(r)) && !/demo-app/.test(causes(r)),
+    `uv.lock : le paquet hors registre est NOMMÉ au manque, le projet lui-même n'y figure pas (obtenu « ${causes(r)} »)`);
+  const appels = lireTrace().filter((a) => a.argv.includes("-r")); // hors sonde de présence (--version)
+  ok(appels.length === 1 && appels[0].mode === "uvx" && appels[0].argv.includes("--no-deps") && appels[0].argv.includes("--disable-pip"),
+    `uv.lock : un seul appel d'audit « uvx pip-audit … --no-deps --disable-pip », rien n'est résolu ni installé (obtenu ${JSON.stringify(appels)})`);
+  const reqUtilise = appels[0] && appels[0].argv[appels[0].argv.indexOf("-r") + 1];
+  ok(typeof reqUtilise === "string" && reqUtilise.startsWith(tmpOracle) && !reqUtilise.startsWith(FX("sca")) && fs.readdirSync(tmpOracle).length === 0,
+    `le requirements dérivé du verrou est écrit dans le dossier temporaire, jamais dans la cible, et supprimé après l'audit (obtenu ${reqUtilise}, ${fs.readdirSync(tmpOracle).length} reste)`);
+
+  r = runJson(ORACLE_SCA, [FX("sca", "uv-propre")], viaUvx);
+  ok(r.verdict === "PASS" && r.synthese.pip && r.synthese.pip.total_paquets === 2 && (r.manques || []).length === 0,
+    `uv.lock sans avis (2 paquets, projet editable exclu) → PASS, aucun manque (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip)})`);
+
+  r = runJson(ORACLE_SCA, [FX("sca", "uv-versions-multiples")], viaUvx);
+  ok(r.verdict === "PASS" && r.synthese.pip && r.synthese.pip.total_paquets === 3,
+    `uv.lock avec deux versions du même paquet → PASS, 3 paquets jugés en deux lots (pip-audit refuse deux versions du même nom dans un fichier) (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip)})`);
+
+  r = runJson(ORACLE_SCA, [FX("sca", "poetry-vulnerable")], viaUvx);
+  ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && r.synthese.pip && r.synthese.pip.total_paquets === 1 && /paquet-git/.test(causes(r)),
+    `poetry.lock avec django 1.4 → FAIL avec SCA-PIP ; la table [package.dependencies] n'est pas lue comme un paquet, le paquet git est nommé au manque (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip)})`);
+  r = runJson(ORACLE_SCA, [FX("sca", "poetry-propre")], viaUvx);
+  ok(r.verdict === "PASS" && r.synthese.pip && r.synthese.pip.total_paquets === 2,
+    `poetry.lock sans avis (2 paquets) → PASS (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip)})`);
+
+  fs.rmSync(trace, { force: true });
+  r = runJson(ORACLE_SCA, [FX("sca", "uv-vulnerable")], direct);
+  ok(r.verdict === "FAIL" && r.synthese.pip && r.synthese.pip.outil === "pip-audit" && lireTrace().length > 0 && lireTrace().every((a) => a.mode === "direct"),
+    `pip-audit présent, uvx absent → pip-audit est lancé directement, sans uvx (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip && r.synthese.pip.outil)})`);
+
+  r = runJson(ORACLE_SCA, [FX("sca", "pip-vulnerable")], viaUvx);
+  ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && r.synthese.pip.outil === "uvx pip-audit",
+    `requirements.txt avec django 1.4, pip-audit absent, uvx présent → FAIL avec SCA-PIP via uvx (obtenu ${r.verdict})`);
+
+  // le manque nommé : un SKIP dit quoi, où, pourquoi et le remède
+  r = runJson(ORACLE_SCA, [FX("sca", "uv-propre")], rien);
+  ok(r.verdict === "SKIP" && (r.manques || []).length === 1 && /uv\.lock/.test(causes(r)) && /ni pip-audit ni uvx/.test(causes(r)) && r.manques[0].remede && /uv\.lock/.test(r.manques[0].manifeste),
+    `uv.lock sans pip-audit ni uvx → SKIP avec un manque nommé (manifeste, cause, remède) (obtenu ${r.verdict}, « ${causes(r)} »)`);
+  ok(typeof r.motif === "string" && /AUDIT NON JOUÉ/.test(r.motif) && /pas un PASS/.test(r.motif) && /uv\.lock/.test(r.motif),
+    `le SKIP porte un motif en une phrase qui dit « audit non joué » et nomme le manque (obtenu « ${r.motif} »)`);
+
+  r = runJson(ORACLE_SCA, [FX("sca", "uv-propre")], { ...direct, WEBSEC_SIM_ECHEC: "1" });
+  ok(r.verdict === "SKIP" && /indisponible/.test(causes(r)) && /base d'avisos injoignable/.test(causes(r)),
+    `outil présent mais audit en échec → SKIP dont le manque cite la cause lue de l'outil (obtenu ${r.verdict}, « ${causes(r)} »)`);
+
+  r = runJson(ORACLE_SCA, [FX("sca", "uv-vide")], viaUvx);
+  ok(r.verdict === "SKIP" && /aucun paquet de registre reconnu/.test(causes(r)),
+    `uv.lock où rien n'est reconnu → SKIP qui le nomme, jamais un PASS (obtenu ${r.verdict}, « ${causes(r)} »)`);
+
+  r = runJson(ORACLE_SCA, [FX("sca", "aucun-manifeste")]);
+  ok(r.verdict === "SKIP" && /uv\.lock/.test(causes(r)) && /poetry\.lock/.test(causes(r)) && typeof r.motif === "string",
+    `dossier sans manifeste → SKIP dont le manque cite les quatre manifestes attendus et le motif est posé (obtenu « ${causes(r)} »)`);
+
+  try { fs.rmSync(traceDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* nettoyage du banc : un verrou Windows passager n'est pas un échec de preuve */ }
+}
+
+// ── verrous avec l'outil RÉEL du poste (pip-audit, sinon uvx) et le réseau ───────
+{
+  const uvxDispo = (() => { try { return spawnSync("uvx", ["--version"], { encoding: "utf8" }).status === 0; } catch { return false; } })();
+  if (!pipDispo && !uvxDispo) {
+    skipNote("ni pip-audit ni uvx sur le poste — sens rouge SCA-PIP sur uv.lock / poetry.lock non démontré avec l'outil réel");
+  } else {
+    for (const cas of ["uv-vulnerable", "poetry-vulnerable"]) {
+      const r = runJson(ORACLE_SCA, [FX("sca", cas)]);
+      if (r.verdict === "SKIP") skipNote(`${cas} : audit indisponible avec l'outil réel (probable absence réseau) — sens rouge non démontré cette exécution : ${r.motif}`);
+      else ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP"), `${cas} (django 1.4) → FAIL avec SCA-PIP, outil réel « ${r.synthese && r.synthese.pip && r.synthese.pip.outil} » (obtenu ${r.verdict})`);
+    }
+    // la voie uvx RÉELLE : pip-audit déclaré absent (chemin injouable), uvx du poste lancé pour de bon
+    if (uvxDispo) {
+      const r = runJson(ORACLE_SCA, [FX("sca", "uv-vulnerable")], { WEBSEC_SCA_PIP_AUDIT: path.join(os.tmpdir(), "websec-outil-absent") });
+      if (r.verdict === "SKIP") skipNote(`uvx réel : audit indisponible (probable absence réseau) — voie uvx non démontrée avec l'outil réel cette exécution : ${r.motif}`);
+      else ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && r.synthese.pip.outil === "uvx pip-audit", `uv-vulnerable, pip-audit absent, VRAI uvx du poste → FAIL avec SCA-PIP via « uvx pip-audit » (obtenu ${r.verdict}, ${r.synthese && r.synthese.pip && r.synthese.pip.outil})`);
+    } else {
+      skipNote("uvx absent du poste — voie uvx non démontrable avec l'outil réel (démontrée avec l'outil simulé)");
+    }
+  }
 }
 
 console.log("\nSELF-TEST forge-websec — oracle-dast (garde-fou dual-use + lecture de rapport ZAP)\n");

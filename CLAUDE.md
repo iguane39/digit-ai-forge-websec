@@ -12,7 +12,7 @@ Détail complet : `README.md`. Mandat d'origine : TF-0123
 - **Outille, ne décide jamais.** Un verdict `FAIL` est un constat localisé, jamais un
   blocage ou une correction automatique.
 - **Zéro API tierce payante, zéro dépendance npm propre.** `oracle-sca` et `oracle-dast`
-  délèguent à l'outillage déjà présent sur le poste (npm, pip-audit, OWASP ZAP) — ils ne
+  délèguent à l'outillage déjà présent sur le poste (npm, pip-audit ou uvx, OWASP ZAP) — ils ne
   l'installent jamais et rendent un **SKIP motivé** (jamais un PASS silencieux) quand cet
   outillage ou le réseau manque.
 - **Aucun scan dynamique sans autorisation écrite.** `oracle-dast` est fail-closed : cible

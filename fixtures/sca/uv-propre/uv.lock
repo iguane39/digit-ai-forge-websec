@@ -1,0 +1,29 @@
+# Fixture synthétique — sens vert oracle-sca (uv), jugé avec l'outil simulé : deux paquets de
+# registre sans avis, et le projet lui-même (source editable), qui n'est pas une dépendance.
+version = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "demo-app"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "paquet-sain" },
+    { name = "autre-sain" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "paquet-sain", specifier = ">=1.0" },
+    { name = "autre-sain", specifier = ">=2.3" },
+]
+
+[[package]]
+name = "paquet-sain"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "autre-sain"
+version = "2.3.1"
+source = { registry = "https://pypi.org/simple" }

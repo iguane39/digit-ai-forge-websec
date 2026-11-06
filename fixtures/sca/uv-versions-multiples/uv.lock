@@ -1,0 +1,39 @@
+# Fixture synthétique — oracle-sca (uv), jugé avec l'outil simulé : un verrou uv.lock porte
+# deux versions du même paquet (marqueurs de résolution). pip-audit refuse deux versions du même
+# nom dans un fichier : l'oracle les audite en deux lots et rend un PASS, jamais un SKIP.
+version = 1
+requires-python = ">=3.9"
+resolution-markers = [
+    "python_full_version >= '3.11'",
+    "python_full_version < '3.11'",
+]
+
+[[package]]
+name = "demo-app"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "paquet-sain", version = "1.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "paquet-sain", version = "2.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+
+[[package]]
+name = "paquet-sain"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+
+[[package]]
+name = "paquet-sain"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.11'",
+]
+
+[[package]]
+name = "autre-sain"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }

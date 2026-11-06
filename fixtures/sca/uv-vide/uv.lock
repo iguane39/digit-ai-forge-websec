@@ -1,0 +1,9 @@
+# Fixture synthétique — oracle-sca (uv) : verrou sans aucun paquet de registre. Un parseur qui ne
+# reconnaît rien ne doit pas rendre un PASS : l'oracle rend un SKIP qui nomme ce manque.
+version = 1
+requires-python = ">=3.11"
+
+[[package]]
+name = "demo-app"
+version = "0.1.0"
+source = { virtual = "." }
