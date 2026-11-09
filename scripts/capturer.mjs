@@ -8,6 +8,7 @@
 // Les autres porteurs de jeton le sont aussi (TF-2107) : paramètres de forme jeton de l'URL et de Location,
 // Authorization, Proxy-Authorization, Cookie. Le message d'échec ne recopie pas non plus l'URL en clair.
 // TF-2133 : Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate et les URL imbriquées/encodées aussi.
+// TF-2306 : toute URL portée par un en-tête (Location, Report-To, Link, CSP…) perd la valeur de chacun de ses paramètres, par position.
 // Usage : node capturer.mjs <url> [--sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]
 import fs from "node:fs";
 import { caviarderSetCookie } from "./caviarder-cookies.mjs";

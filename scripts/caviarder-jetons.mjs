@@ -5,6 +5,8 @@
 // car oracle-exposition ne juge que les en-têtes de sécurité et le schéma (http/https) de l'URL.
 // TF-2133 : Content-Location, Link, Refresh, X-Auth-Token et WWW-Authenticate sont caviardés aussi, et une URL ou une
 // liste de paramètres imbriquée dans une valeur (redirect_uri=…%3Fcode%3D…) est décodée avant d'être jugée.
+// TF-2306 : dans les URL PORTÉES PAR UN EN-TÊTE (Location, Report-To, Link, CSP…), la valeur de chaque paramètre est
+// remplacée par position, sans juger le nom ; seule l'URL capturée elle-même garde le caviardage par forme de nom.
 import { CAVIARDE, caviarderSetCookie } from "./caviarder-cookies.mjs";
 
 // Un nom de paramètre est « de forme jeton » s'il est dans la liste exacte ou s'il s'y termine par un mot-jeton.
@@ -64,7 +66,7 @@ function caviarderValeurImbriquee(valeur) {
 // Une URL, absolue ou relative (Location) : identifiants « user:mot-de-passe@ », paramètres de chemin
 // (« ;jsessionid=… »), paramètres de requête et de fragment. Traitement par le texte, sans réécrire l'URL
 // (pas de normalisation) : ce qui n'est pas un jeton sort octet pour octet.
-export function caviarderUrl(entree) {
+export function caviarderUrl(entree, traiterParametres = caviarderParametres) {
   const s = String(entree);
   const iDiese = s.indexOf("#");
   const sansFragment = iDiese >= 0 ? s.slice(0, iDiese) : s;
@@ -76,8 +78,37 @@ export function caviarderUrl(entree) {
     .replace(/^((?:[a-z][a-z0-9+.-]*:)?\/\/)[^/@]*@/i, `$1${CAVIARDE}@`)
     .replace(/;([^=;/]+)=([^;/]*)/g, (m, nom) => (estNomDeJeton(nom) ? `;${nom}=${CAVIARDE}` : m));
   return cheminSur
-    + (requete !== null ? `?${caviarderParametres(requete)}` : "")
-    + (fragment !== null ? `#${caviarderParametres(fragment)}` : "");
+    + (requete !== null ? `?${traiterParametres(requete)}` : "")
+    + (fragment !== null ? `#${traiterParametres(fragment)}` : "");
+}
+
+// TF-2306 : une URL PORTÉE PAR UN EN-TÊTE (Location, Report-To, Link, Reporting-Endpoints, report-uri…) est caviardée
+// par POSITION : la valeur de chaque paramètre de requête ou de fragment est remplacée, quel que soit son nom. Le nom
+// (`meta`, `s`, `kid`) ne dit pas qu'une valeur est un jeton : le 09/11/2026, un JWT de 684 caractères dans `meta` et la
+// signature `s` de Report-To (redirection Cloudflare Access) ont traversé les listes de noms de TF-2107 et TF-2133.
+// Restent lisibles : schéma, hôte, chemin et NOMS des paramètres. Un élément sans « = » est un nom (drapeau) et reste ;
+// l'échappement JSON de l'esperluette (barre inverse, « u0026 ») sépare comme « & ». Identifiant et paramètres de
+// chemin gardent le caviardage par nom.
+function caviarderParametresParPosition(liste) {
+  return liste.split(/(&|\\u0026)/i).map((p, i) => {
+    if (i % 2 === 1) return p; // séparateur conservé tel quel
+    const egal = p.indexOf("=");
+    return egal < 0 ? p : `${p.slice(0, egal)}=${CAVIARDE}`;
+  }).join("");
+}
+export function caviarderUrlEnTete(entree) {
+  if (Array.isArray(entree)) return entree.map((v) => caviarderUrlEnTete(v));
+  return caviarderUrl(entree, caviarderParametresParPosition);
+}
+
+// Toute valeur d'en-tête qui contient une URL absolue (`schéma://…`) : JSON de Report-To (barres `\/` et
+// esperluettes échappées comprises), liste de Reporting-Endpoints, `report-uri` d'une CSP. L'URL s'arrête à un espace, un guillemet,
+// `<`, `>` ou une barre inverse isolée ; « ; » et « , » n'y restent que suivis d'un caractère d'URL (le « ; » d'une CSP
+// termine, le `;jsessionid=` d'un chemin continue). Le reste de la valeur sort octet pour octet.
+const URL_DANS_VALEUR = /[a-z][a-z0-9+.-]*:(?:\/|\\\/){2}(?:\\\/|\\u[0-9a-f]{4}|[^\s"'<>\\;,]|[;,](?=[^\s"'<>\\;,]))+/gi;
+export function caviarderUrlsDeValeur(entree) {
+  if (Array.isArray(entree)) return entree.map((v) => caviarderUrlsDeValeur(v));
+  return String(entree).replace(URL_DANS_VALEUR, (u) => caviarderUrlEnTete(u));
 }
 
 // Authorization / Proxy-Authorization : « schéma justificatifs ». Le schéma (Bearer, Basic, Digest…) n'est pas secret
@@ -93,15 +124,15 @@ export function caviarderAutorisation(entree) {
 export function caviarderLien(entree) {
   if (Array.isArray(entree)) return entree.map((v) => caviarderLien(v));
   return String(entree)
-    .replace(/<([^>]*)>/g, (m, u) => `<${caviarderUrl(u)}>`)
-    .replace(/(\banchor\s*=\s*")([^"]*)(")/gi, (m, a, u, f) => `${a}${caviarderUrl(u)}${f}`);
+    .replace(/<([^>]*)>/g, (m, u) => `<${caviarderUrlEnTete(u)}>`)
+    .replace(/(\banchor\s*=\s*")([^"]*)(")/gi, (m, a, u, f) => `${a}${caviarderUrlEnTete(u)}${f}`);
 }
 
 export function caviarderRefresh(entree) {
   if (Array.isArray(entree)) return entree.map((v) => caviarderRefresh(v));
   const s = String(entree);
   const m = /^(\s*[\d.]*\s*[;,]\s*(?:url\s*=\s*)?["']?)([^"']*)(["']?\s*)$/i.exec(s);
-  return m ? `${m[1]}${caviarderUrl(m[2])}${m[3]}` : s;
+  return m ? `${m[1]}${caviarderUrlEnTete(m[2])}${m[3]}` : s;
 }
 
 // WWW-Authenticate : défis « schéma jeton68 » ou « schéma nom=valeur, … ». Restent : schémas, realm, error, scope, qop.
@@ -116,7 +147,7 @@ export function caviarderDefi(entree) {
       const cite = valeur.startsWith('"');
       const interieur = cite ? valeur.slice(1, -1) : valeur;
       if (estNomDeJeton(nom) || NOMS_DEFI.has(nom.toLowerCase())) return `${nom}${egal}${cite ? `"${CAVIARDE}"` : CAVIARDE}`;
-      if (/:\/\/|^\//.test(interieur)) return `${nom}${egal}${cite ? `"${caviarderUrl(interieur)}"` : caviarderUrl(interieur)}`;
+      if (/:\/\/|^\//.test(interieur)) return `${nom}${egal}${cite ? `"${caviarderUrlEnTete(interieur)}"` : caviarderUrlEnTete(interieur)}`;
       return m;
     });
 }
@@ -135,12 +166,12 @@ export function caviarderEnTetes(headers) {
     if (cle === "set-cookie") sortie[nom] = caviarderSetCookie(valeur);
     else if (cle === "cookie") sortie[nom] = caviarderCookieRequete(valeur);
     else if (cle === "authorization" || cle === "proxy-authorization") sortie[nom] = caviarderAutorisation(valeur);
-    else if (cle === "location" || cle === "content-location") sortie[nom] = Array.isArray(valeur) ? valeur.map((v) => caviarderUrl(v)) : caviarderUrl(valeur);
+    else if (cle === "location" || cle === "content-location") sortie[nom] = caviarderUrlEnTete(valeur);
     else if (cle === "link") sortie[nom] = caviarderLien(valeur);
     else if (cle === "refresh") sortie[nom] = caviarderRefresh(valeur);
     else if (cle === "x-auth-token") sortie[nom] = Array.isArray(valeur) ? valeur.map(() => CAVIARDE) : CAVIARDE;
     else if (cle === "www-authenticate") sortie[nom] = caviarderDefi(valeur);
-    else sortie[nom] = valeur;
+    else sortie[nom] = caviarderUrlsDeValeur(valeur); // TF-2306 : toute autre valeur qui porte une URL (Report-To, CSP, Reporting-Endpoints…)
   }
   return sortie;
 }

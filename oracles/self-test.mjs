@@ -592,8 +592,8 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2107 : URL, Location,
     const h = cap?.headers ?? {};
     ok(cap?.url === urlAttendue,
       `VERT · l'URL capturée garde schéma, hôte, chemin et paramètre sans jeton (page=2), les 4 jetons sont remplacés (obtenu ${cap?.url})`);
-    ok(h.location === "https://[caviardé]@sso.exemple.test/callback;jsessionid=[caviardé]?code=[caviardé]&state=ok&lang=fr#id_token=[caviardé]&token_type=Bearer",
-      `VERT · Location garde sa forme (hôte, chemin, state, lang, token_type), seuls l'identifiant, jsessionid, code et id_token sont remplacés (obtenu ${h.location})`);
+    ok(h.location === "https://[caviardé]@sso.exemple.test/callback;jsessionid=[caviardé]?code=[caviardé]&state=[caviardé]&lang=[caviardé]#id_token=[caviardé]&token_type=[caviardé]",
+      `VERT · Location garde sa forme (schéma, hôte, chemin, NOMS des paramètres) ; l'identifiant, jsessionid et la valeur de chaque paramètre sont remplacés par position (TF-2306) (obtenu ${h.location})`);
     ok(h.authorization === "Bearer [caviardé]" && h["proxy-authorization"] === "Basic [caviardé]",
       "VERT · Authorization et Proxy-Authorization gardent le schéma (Bearer, Basic), les justificatifs sont remplacés");
     ok(h.cookie === "sid=[caviardé]; pref=[caviardé]" && Array.isArray(h["set-cookie"]) && h["set-cookie"][0] === "session=[caviardé]; Path=/; HttpOnly",
@@ -695,17 +695,17 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2133 : Content-Locati
     let cap = null;
     try { cap = JSON.parse(brut); } catch { /* les contrôles suivants le disent */ }
     const h = cap?.headers ?? {};
-    ok(h["content-location"] === "/v2/doc?access_token=[caviardé]&page=1",
-      `VERT · Content-Location garde chemin et page=1, access_token est remplacé (obtenu ${h["content-location"]})`);
-    ok(h.link === '<https://api.exemple.test/p2?token=[caviardé]&page=2>; rel="next", <https://api.exemple.test/p1?page=1>; rel="prev"',
-      `VERT · Link garde ses deux liens, ses rel et le lien sans jeton octet pour octet ; seul token est remplacé (obtenu ${h.link})`);
-    ok(h.refresh === "0; url=https://sso.exemple.test/r?code=[caviardé]&lang=fr",
-      `VERT · Refresh garde le délai, l'hôte, le chemin et lang ; seul code est remplacé (obtenu ${h.refresh})`);
+    ok(h["content-location"] === "/v2/doc?access_token=[caviardé]&page=[caviardé]",
+      `VERT · Content-Location garde le chemin et les noms access_token et page, leurs valeurs sont remplacées (obtenu ${h["content-location"]})`);
+    ok(h.link === '<https://api.exemple.test/p2?token=[caviardé]&page=[caviardé]>; rel="next", <https://api.exemple.test/p1?page=[caviardé]>; rel="prev"',
+      `VERT · Link garde ses deux liens, ses rel, les chemins et les noms de paramètres ; chaque valeur est remplacée (obtenu ${h.link})`);
+    ok(h.refresh === "0; url=https://sso.exemple.test/r?code=[caviardé]&lang=[caviardé]",
+      `VERT · Refresh garde le délai, l'hôte, le chemin et les noms code et lang ; leurs valeurs sont remplacées (obtenu ${h.refresh})`);
     ok(h["x-auth-token"] === "[caviardé]", `VERT · X-Auth-Token est remplacé en entier (obtenu ${h["x-auth-token"]})`);
     ok(h["www-authenticate"] === 'Bearer realm="api", error="invalid_token", resource_metadata="https://api.exemple.test/.well-known/m?access_token=[caviardé]", Negotiate [caviardé], Digest realm="api", nonce="[caviardé]", qop="auth"',
       `VERT · WWW-Authenticate garde schémas, realm, error et qop ; l'URL à jeton, le jeton nu de Negotiate et le nonce sont remplacés (obtenu ${h["www-authenticate"]})`);
-    ok(h.location === "https://sso.exemple.test/authorize?client_id=app&redirect_uri=https%3A%2F%2Fapp.exemple.test%2Fcb%3Fcode%3D[caviardé]%26state%3Dok&lang=fr",
-      `VERT · Location garde client_id, state et lang ; le code caché dans redirect_uri encodé est remplacé (obtenu ${h.location})`);
+    ok(h.location === "https://sso.exemple.test/authorize?client_id=[caviardé]&redirect_uri=[caviardé]&lang=[caviardé]",
+      `VERT · Location garde l'hôte, le chemin et les noms client_id, redirect_uri et lang ; le redirect_uri encodé et son code disparaissent avec la valeur (obtenu ${h.location})`);
     ok(cap?.url === urlAttendue, `VERT · l'URL capturée garde page=2 et l'encodage du redirect_uri, seul son code est remplacé (obtenu ${cap?.url})`);
     ok(cap?.status === 302 && h["x-content-type-options"] === "nosniff" && cap?.redirections_suivies === false,
       "VERT · le reste de la capture (statut, autre en-tête, drapeau de redirection) est intact");
@@ -735,9 +735,128 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2133 : Content-Locati
     const enTetesOk = e2["CONTENT-LOCATION"] === "/a?code=[caviardé]" && e2.Link[0] === "<https://h.test/n?sig=[caviardé]>; rel=next"
       && e2.REFRESH === "5" && e2["x-auth-token"].join() === "[caviardé],[caviardé]" && e2["WWW-Authenticate"] === 'Basic realm="zone"'
       && e2["Www-Authenticate"] === 'Bearer error="invalid_token", error_description="expired"'
-      && sansJeton.Link === '<https://h.test/n?page=2>; rel="next"; anchor="https://h.test/a"' && sansJeton.Refresh === "3; URL='https://h.test/ok?lang=fr'"
+      && sansJeton.Link === '<https://h.test/n?page=[caviardé]>; rel="next"; anchor="https://h.test/a"' && sansJeton.Refresh === "3; URL='https://h.test/ok?lang=[caviardé]'"
       && sansJeton["Content-Location"] === "/doc/12" && sansJeton["WWW-Authenticate"] === 'Bearer realm="api", scope="read write"';
     ok(enTetesOk, `bords des en-têtes : noms sans casse, valeurs en tableau, Refresh sans URL, défi sans jeton et en-têtes sans jeton intacts (${enTetesOk ? "tous tenus" : JSON.stringify([e2, sansJeton])})`);
+  } finally {
+    origine.close();
+    fs.rmSync(tmpCap, { recursive: true, force: true });
+  }
+}
+
+// ── TF-2306 · tout paramètre de requête d'une URL d'en-tête est caviardé PAR POSITION ─────────────
+// Troisième passe sur la même classe (TF-2107, TF-2133 : caviardage par FORME du nom). Une redirection Cloudflare
+// Access porte son jeton dans `meta` (JWT de 684 caractères) et Report-To sa signature dans `s` : aucun de ces noms
+// n'est « de forme jeton ». Le banc sert une réponse 302 qui porte ces deux en-têtes et trois autres porteurs d'URL
+// aux paramètres de nom ordinaire, lance le VRAI capturer.mjs, puis juge dans les deux sens : ROUGE si une valeur
+// survit ; VERT si schéma, hôte, chemin et NOMS des paramètres restent lisibles. Les faux jetons sont ASSEMBLÉS À
+// L'EXÉCUTION : aucun jeton de test en clair dans le source (la protection des secrets de l'hébergeur le refuse).
+console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2306 : toute valeur de paramètre d'une URL d'en-tête caviardée par position)\n");
+{
+  const CAPTURER = path.join(HERE, "..", "scripts", "capturer.mjs");
+  const b64 = (o) => Buffer.from(typeof o === "string" || Buffer.isBuffer(o) ? o : JSON.stringify(o)).toString("base64url");
+  const enteteJwt = b64({ alg: "RS256", typ: "JWT", kid: "cle-de-test" });
+  const signatureJwt = b64(Buffer.from(Array.from({ length: 256 }, (_, i) => (i * 7 + 13) % 256)));
+  let charge = "";
+  for (let n = 0; enteteJwt.length + charge.length + signatureJwt.length + 2 < 684; n++) {
+    charge = b64({ aud: "app.exemple.test", marque: "SECRET-META-3f9a", bourrage: "x".repeat(n) });
+  }
+  const jetonMeta = `${enteteJwt}.${charge}.${signatureJwt}`;
+  const signatureRapport = b64("SECRET-REPORTTO-" + "8c1d".repeat(8));
+  const valeurCurseur = b64("SECRET-CURSEUR-" + "5a".repeat(10));
+  const valeurContexte = b64("SECRET-CONTEXTE-" + "9b".repeat(10));
+  const valeurRapports = b64("SECRET-RAPPORTS-" + "2e".repeat(10));
+  const PORTEURS = {
+    "Location (Cloudflare Access, paramètre meta)": [jetonMeta, charge, signatureJwt],
+    "Report-To (signature du point de terminaison)": [signatureRapport],
+    "Link (paramètre de nom ordinaire)": [valeurCurseur],
+    "Content-Security-Policy (report-uri)": [valeurContexte],
+    "Reporting-Endpoints": [valeurRapports],
+  };
+  const TOUS = Object.values(PORTEURS).flat();
+  const origine = http.createServer((req, res) => {
+    res.statusCode = 302;
+    res.setHeader("Location", `https://equipe.exemple.test/cdn-cgi/access/login/app.exemple.test?kid=cle-acces-id&meta=${jetonMeta}&redirect_url=%2Faccueil`);
+    res.setHeader("Report-To", `{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=${signatureRapport}"}]}`);
+    res.setHeader("NEL", '{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}');
+    res.setHeader("Link", `<https://api.exemple.test/liste?curseur=${valeurCurseur}&page=2>; rel="next"`);
+    res.setHeader("Content-Security-Policy", `default-src 'self'; report-uri https://rapports.exemple.test/csp?ctx=${valeurContexte}; frame-ancestors 'none'`);
+    res.setHeader("Reporting-Endpoints", `default="https://rapports.exemple.test/r?ref=${valeurRapports}"`);
+    res.setHeader("Access-Control-Allow-Origin", "https://app.exemple.test");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.end("");
+  });
+  await new Promise((r) => origine.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${origine.address().port}/`;
+  const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-position-"));
+  const lancer = (cible, args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, cible, ...args], { encoding: "utf8", timeout: 30000 },
+    (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+  try {
+    ok(jetonMeta.length >= 684 && /^[\w-]+\.[\w-]+\.[\w-]+$/.test(jetonMeta),
+      `le faux jeton meta est un JWT assemblé à l'exécution de ${jetonMeta.length} caractères (en-tête.charge.signature), jamais écrit dans le source`);
+    const fichier = path.join(tmpCap, "capture.json");
+    const viaFichier = await lancer(base, ["--sortie", fichier]);
+    const brut = fs.existsSync(fichier) ? fs.readFileSync(fichier, "utf8") : "";
+    const viaStdout = await lancer(base, []);
+    ok(viaFichier.code === 0 && viaStdout.code === 0 && brut.length > 0,
+      `capturer.mjs capture l'origine locale à redirection d'accès, par fichier et par sortie standard (codes ${viaFichier.code} / ${viaStdout.code})`);
+    // ROUGE : par porteur, aucune valeur ne survit ni dans le fichier, ni sur la sortie standard, ni dans les messages.
+    const sortie = brut + viaStdout.stdout + viaFichier.stderr + viaStdout.stderr;
+    for (const [porteur, secrets] of Object.entries(PORTEURS)) {
+      const survivants = secrets.filter((s) => sortie.includes(s));
+      ok(survivants.length === 0, `ROUGE · porteur « ${porteur} » caviardé à la capture (valeurs survivantes : ${survivants.length}/${secrets.length})`);
+    }
+    // VERT : schéma, hôte, chemin et NOMS des paramètres restent lisibles ; seules les valeurs sont remplacées.
+    let cap = null;
+    try { cap = JSON.parse(brut); } catch { /* les contrôles suivants le disent */ }
+    const h = cap?.headers ?? {};
+    ok(h.location === "https://equipe.exemple.test/cdn-cgi/access/login/app.exemple.test?kid=[caviardé]&meta=[caviardé]&redirect_url=[caviardé]",
+      `VERT · Location garde schéma, hôte, chemin et les noms kid, meta, redirect_url ; chaque valeur est remplacée (obtenu ${h.location})`);
+    ok(h["report-to"] === '{"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=[caviardé]"}]}',
+      `VERT · Report-To garde son JSON, l'hôte, le chemin et le nom s ; la signature est remplacée (obtenu ${h["report-to"]})`);
+    ok(h.link === '<https://api.exemple.test/liste?curseur=[caviardé]&page=[caviardé]>; rel="next"',
+      `VERT · Link garde l'hôte, le chemin, les noms curseur et page, et rel (obtenu ${h.link})`);
+    ok(h["content-security-policy"] === "default-src 'self'; report-uri https://rapports.exemple.test/csp?ctx=[caviardé]; frame-ancestors 'none'",
+      `VERT · la CSP garde ses directives et le séparateur « ; » ; seule la valeur de ctx dans report-uri est remplacée (obtenu ${h["content-security-policy"]})`);
+    ok(h["reporting-endpoints"] === 'default="https://rapports.exemple.test/r?ref=[caviardé]"',
+      `VERT · Reporting-Endpoints garde son nom de groupe, l'hôte, le chemin et ref (obtenu ${h["reporting-endpoints"]})`);
+    ok(h.nel === '{"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}' && h["access-control-allow-origin"] === "https://app.exemple.test"
+      && h["x-content-type-options"] === "nosniff" && cap?.status === 302 && cap?.redirections_suivies === false,
+      "VERT · les en-têtes sans paramètre d'URL (NEL, origine autorisée, nosniff) et le statut sortent octet pour octet");
+    // Exploitable : oracle-exposition lit la CSP caviardée (ni EX-1, ni EX-2) et ne recopie aucune valeur.
+    const jug = runJson(ORACLE_EXPOSITION, [fichier]);
+    ok(jug.verdict !== "ILLISIBLE" && !aRegle(jug, "EX-1") && !aRegle(jug, "EX-2") && !TOUS.some((s) => JSON.stringify(jug).includes(s)),
+      `VERT · la capture caviardée reste exploitable : oracle-exposition lit la CSP (ni EX-1 ni EX-2) sans recopier de valeur (obtenu ${jug.verdict})`);
+    // Bords, sur les fonctions : position contre forme, JSON échappé, séparateurs, userinfo et paramètre de chemin, idempotence.
+    const { caviarderUrl, caviarderUrlEnTete, caviarderEnTetes } = await import(pathToFileURL(path.join(HERE, "..", "scripts", "caviarder-jetons.mjs")).href);
+    const bordsEnTete = [
+      ["/x?a=1&b=2#f=3&g", "/x?a=[caviardé]&b=[caviardé]#f=[caviardé]&g"],
+      ["https://h.test/p/a", "https://h.test/p/a"],
+      ["https://h.test/p?", "https://h.test/p?"],
+      ["https://h.test/p#section", "https://h.test/p#section"],
+      ["https://h.test/p?r=https%3A%2F%2Fa.test%2Fcb%3Fcode%3DSEC&x=1", "https://h.test/p?r=[caviardé]&x=[caviardé]"],
+      ["https://h.test/p?a=1;b=SEC", "https://h.test/p?a=[caviardé]"],
+      ["https://u:pw@h.test/p;jsessionid=X?z=1", "https://[caviardé]@h.test/p;jsessionid=[caviardé]?z=[caviardé]"],
+      ["https://h.test/p?vide=&drapeau&k=v", "https://h.test/p?vide=[caviardé]&drapeau&k=[caviardé]"],
+      ["https://h.test/p?a=[caviardé]", "https://h.test/p?a=[caviardé]"],
+    ];
+    const ecartsEnTete = bordsEnTete.filter(([e, s]) => caviarderUrlEnTete(e) !== s || caviarderUrlEnTete(caviarderUrlEnTete(e)) !== s)
+      .map(([e, s]) => `${e} → ${caviarderUrlEnTete(e)} (attendu ${s})`);
+    ok(ecartsEnTete.length === 0, `bords de l'URL d'en-tête : relative, sans requête, requête vide, fragment sans paramètre, valeur encodée, séparateur « ; », identifiant et paramètre de chemin, drapeau sans valeur, idempotent (écarts : ${ecartsEnTete.length}${ecartsEnTete.length ? " · " + ecartsEnTete[0] : ""})`);
+    // La capture de l'URL DEMANDÉE reste caviardée par forme de nom (TF-2107) : la décision vise les URL d'en-tête.
+    const urlParForme = caviarderUrl("https://h.test/p?page=2&meta=SEC&token=SEC");
+    ok(urlParForme === "https://h.test/p?page=2&meta=SEC&token=[caviardé]", `l'URL demandée n'est pas touchée par ce changement : caviardage par forme de nom inchangé (obtenu ${urlParForme})`);
+    const e3 = caviarderEnTetes({
+      "REPORT-TO": ['{"endpoints":[{"url":"https:\\/\\/a.test\\/r?s=SEC\\u0026t=2"}]}'], "Reporting-Endpoints": 'a="https://x.test/r?k=SEC", b="https://y.test/r?k=SEC"',
+      "Content-Security-Policy": "report-uri https://r.test/c?ctx=SEC; script-src 'self'", "Alt-Svc": 'h3=":443"; ma=86400', Via: "1.1 proxy",
+      "Access-Control-Allow-Origin": "https://app.test", "X-Autre": "garde?code=1", Location: ["/a?x=1", "/b?y=2"],
+    });
+    const e3Ok = e3["REPORT-TO"][0] === '{"endpoints":[{"url":"https:\\/\\/a.test\\/r?s=[caviardé]\\u0026t=[caviardé]"}]}'
+      && e3["Reporting-Endpoints"] === 'a="https://x.test/r?k=[caviardé]", b="https://y.test/r?k=[caviardé]"'
+      && e3["Content-Security-Policy"] === "report-uri https://r.test/c?ctx=[caviardé]; script-src 'self'"
+      && e3["Alt-Svc"] === 'h3=":443"; ma=86400' && e3.Via === "1.1 proxy" && e3["Access-Control-Allow-Origin"] === "https://app.test"
+      && e3["X-Autre"] === "garde?code=1" && e3.Location.join() === "/a?x=[caviardé],/b?y=[caviardé]";
+    ok(e3Ok, `bords des en-têtes : JSON à barres échappées et \\u0026, liste d'URL entre guillemets, « ; » de la CSP, Alt-Svc, Via, origine, valeur en tableau (${e3Ok ? "tous tenus" : JSON.stringify(e3)})`);
   } finally {
     origine.close();
     fs.rmSync(tmpCap, { recursive: true, force: true });

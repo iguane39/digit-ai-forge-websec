@@ -5,6 +5,37 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-09 — `scripts/capturer.mjs` : la valeur de chaque paramètre d'une URL d'en-tête est caviardée par position (TF-2306)
+
+- **Effet** : troisième correction de la même classe (`capture-de-preuve-porte-un-jeton`, après TF-2107 et TF-2133). Une
+  redirection Cloudflare Access a laissé en clair le paramètre `meta` de `Location` (un JWT de 684 caractères) et la
+  signature `s` de `Report-To` : les deux corrections précédentes jugeaient la FORME du nom (`token`, `code`, `key`…), et
+  `meta` comme `s` n'en ont pas. La capture versionnée avec le produit a été prise par son balayage de secrets.
+  Désormais, dans toute URL portée par un en-tête, la valeur de chaque paramètre de requête ou de fragment est remplacée
+  par `[caviardé]` quel que soit son nom. Restent lisibles : schéma, hôte, chemin et noms des paramètres
+  (`…/app?kid=[caviardé]&meta=[caviardé]&redirect_url=[caviardé]`).
+- **Périmètre** : `Location`, `Content-Location`, `Link`, `Refresh` et les URL de `WWW-Authenticate` passent par la
+  nouvelle règle de position. Tout autre en-tête (`Report-To`, `Reporting-Endpoints`, `Content-Security-Policy` et son
+  `report-uri`…) est parcouru pour ses URL absolues `schéma://…`, y compris dans un JSON à barres `\/` et `&`
+  échappées ; le reste de la valeur (directives, `;`, JSON, `NEL`, `Access-Control-Allow-Origin`) sort octet pour octet.
+- **Changement de comportement voulu** : un paramètre sans jeton d'une URL d'en-tête (`state`, `lang`, `page`) perd
+  aussi sa valeur, et un `redirect_uri` encodé disparaît en entier avec son code. Six attentes de TF-2107 et TF-2133
+  ont été durcies en conséquence (aucune n'a été relâchée) ; l'URL capturée elle-même (champ `url`) garde le caviardage
+  par forme de nom de TF-2107 et TF-2133, inchangé et toujours testé.
+- **Limites dites** : un élément de requête sans `=` est tenu pour un nom (drapeau) et reste, donc un jeton nu sans nom
+  (`?<jeton>`) n'est pas vu ; une URL relative dans un en-tête autre que ceux de la liste (`report-uri /csp?t=…`) n'est
+  pas vue, faute de `schéma://` ; un jeton dans un segment de chemin reste non traité (limite de TF-2133). Les captures
+  déjà écrites ne sont pas réécrites.
+- **Où** : `scripts/caviarder-jetons.mjs` (`caviarderUrlEnTete`, `caviarderUrlsDeValeur`, `caviarderUrl` accepte le
+  traitement des paramètres en second argument), `scripts/capturer.mjs` (commentaire), `oracles/self-test.mjs`.
+- **oracle-exposition** : aucune règle ni `VERSION` ne change (0.2.0) ; la capture caviardée est lue comme avant, CSP
+  comprise (ni EX-1 ni EX-2 sur la fixture).
+- **Preuve** : le faux JWT de 684 caractères, les signatures et les valeurs sont assemblés à l'exécution dans le
+  self-test, jamais en clair dans le source. Sens rouge mesuré avant le code : 41 PASS, 16 FAIL (5 porteurs survivants,
+  5 contrôles vert du nouveau banc, 6 attentes durcies de TF-2107 et TF-2133), puis arrêt sur `caviarderUrlEnTete is not
+  a function` avant les 2 bancs de bords. Après : `node oracles/self-test.mjs` 154 PASS, 0 FAIL, 2 SKIP motivé
+  (`pip-audit` absent du poste) ; avant le changement 137 PASS, 0 FAIL, 2 SKIP. 17 contrôles ajoutés.
+
 ## 2026-11-06 — `oracle-sca` 0.2.0 : uv.lock, poetry.lock, uvx, et un SKIP qui nomme son manque (TF-2272)
 
 - **Effet** : sur un produit Python géré par `uv` ou `poetry` (`pyproject.toml` + verrou, sans `requirements.txt`),
