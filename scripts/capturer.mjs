@@ -9,10 +9,11 @@
 // Authorization, Proxy-Authorization, Cookie. Le message d'échec ne recopie pas non plus l'URL en clair.
 // TF-2133 : Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate et les URL imbriquées/encodées aussi.
 // TF-2306 : toute URL portée par un en-tête (Location, Report-To, Link, CSP…) perd la valeur de chacun de ses paramètres, par position.
+// TF-2390 : l'adresse capturée (champ url) et l'adresse du message d'échec suivent la même règle de position.
 // Usage : node capturer.mjs <url> [--sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]
 import fs from "node:fs";
 import { caviarderSetCookie } from "./caviarder-cookies.mjs";
-import { caviarderEnTetes, caviarderUrl } from "./caviarder-jetons.mjs";
+import { caviarderEnTetes, caviarderUrlEnTete, caviarderUrlsDeValeur } from "./caviarder-jetons.mjs";
 
 const args = process.argv.slice(2);
 const url = args.find((a) => !a.startsWith("--"));
@@ -54,7 +55,7 @@ try {
   if (setCookie.length) headers["set-cookie"] = caviarderSetCookie(setCookie);
 
   const capture = {
-    url: caviarderUrl(url), // TF-2107 : un jeton passé en paramètre d'URL n'entre pas non plus dans la capture
+    url: caviarderUrlEnTete(url), // TF-2107 : un jeton passé en paramètre d'URL n'entre pas non plus dans la capture ; TF-2390 : par position, comme les en-têtes
     status: res.status,
     headers: caviarderEnTetes(headers), // TF-2107 : Authorization, Proxy-Authorization, Cookie, Location (Set-Cookie : idempotent)
     capture_ts: new Date().toISOString(),
@@ -69,7 +70,11 @@ try {
   }
 } catch (e) {
   clearTimeout(minuteur);
-  const motif = e.name === "AbortError" ? `délai dépassé (${timeoutMs}ms)` : e.message;
-  console.error(`capture échouée pour ${caviarderUrl(url)} : ${motif}`);
+  const urlSure = caviarderUrlEnTete(url);
+  // TF-2390 : le moteur cite l'adresse EN CLAIR dans certains refus (identifiant « utilisateur:mot-de-passe@ », adresse
+  // mal formée) : on la remplace par sa forme caviardée, puis toute autre adresse absolue du message passe par la même règle.
+  const motifBrut = e.name === "AbortError" ? `délai dépassé (${timeoutMs}ms)` : String(e.message);
+  const motif = caviarderUrlsDeValeur(motifBrut.split(url).join(urlSure));
+  console.error(`capture échouée pour ${urlSure} : ${motif}`);
   process.exit(1);
 }

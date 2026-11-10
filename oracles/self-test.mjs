@@ -569,7 +569,7 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2107 : URL, Location,
   await new Promise((r) => origine.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${origine.address().port}/`;
   const urlJetons = `${base}?access_token=SECRET-ACCESS-91f0&apikey=SECRET-APIKEY-7777&signature=SECRET-SIGNATURE-d4d4&session=SECRET-SESSION-0b0b&page=2`;
-  const urlAttendue = `${base}?access_token=[caviardé]&apikey=[caviardé]&signature=[caviardé]&session=[caviardé]&page=2`;
+  const urlAttendue = `${base}?access_token=[caviardé]&apikey=[caviardé]&signature=[caviardé]&session=[caviardé]&page=[caviardé]`;
   const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-jetons-"));
   const lancer = (cible, args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, cible, ...args], { encoding: "utf8", timeout: 30000 },
     (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
@@ -591,7 +591,7 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2107 : URL, Location,
     try { cap = JSON.parse(brut); } catch { /* les contrôles suivants le disent */ }
     const h = cap?.headers ?? {};
     ok(cap?.url === urlAttendue,
-      `VERT · l'URL capturée garde schéma, hôte, chemin et paramètre sans jeton (page=2), les 4 jetons sont remplacés (obtenu ${cap?.url})`);
+      `VERT · l'URL capturée garde schéma, hôte, chemin et les NOMS de ses paramètres ; la valeur de chacun, page comprise, est remplacée par position (TF-2390) (obtenu ${cap?.url})`);
     ok(h.location === "https://[caviardé]@sso.exemple.test/callback;jsessionid=[caviardé]?code=[caviardé]&state=[caviardé]&lang=[caviardé]#id_token=[caviardé]&token_type=[caviardé]",
       `VERT · Location garde sa forme (schéma, hôte, chemin, NOMS des paramètres) ; l'identifiant, jsessionid et la valeur de chaque paramètre sont remplacés par position (TF-2306) (obtenu ${h.location})`);
     ok(h.authorization === "Bearer [caviardé]" && h["proxy-authorization"] === "Basic [caviardé]",
@@ -608,8 +608,8 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2107 : URL, Location,
     const libre = http.createServer(); await new Promise((r) => libre.listen(0, "127.0.0.1", r));
     const portMort = libre.address().port; await new Promise((r) => libre.close(r));
     const echec = await lancer(`http://127.0.0.1:${portMort}/?access_token=SECRET-ECHEC-e3e3&page=2`, []);
-    ok(echec.code === 1 && /capture échouée/.test(echec.stderr) && !echec.stderr.includes("SECRET-ECHEC-e3e3") && echec.stderr.includes("page=2"),
-      `ROUGE · le message d'échec ne recopie pas le jeton de l'URL demandée, l'URL reste reconnaissable (code ${echec.code})`);
+    ok(echec.code === 1 && /capture échouée/.test(echec.stderr) && !echec.stderr.includes("SECRET-ECHEC-e3e3") && echec.stderr.includes("?access_token=[caviardé]&page=[caviardé]"),
+      `ROUGE · le message d'échec ne recopie pas le jeton de l'URL demandée, l'URL reste reconnaissable par son hôte, son chemin et les noms de ses paramètres (code ${echec.code})`);
     // Bords du caviardage : URL relative, fragment-route, nom encodé, casse, paramètre sans valeur, idempotence.
     const { caviarderUrl, caviarderAutorisation, caviarderCookieRequete, caviarderEnTetes } =
       await import(pathToFileURL(path.join(HERE, "..", "scripts", "caviarder-jetons.mjs")).href);
@@ -674,7 +674,7 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2133 : Content-Locati
   await new Promise((r) => origine.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${origine.address().port}/`;
   const urlImbriquee = `${base}?redirect_uri=https%3A%2F%2Fapp.exemple.test%2Fcb%3Fcode%3DSECRET-NESTED-URL-9c9c%26state%3Dok&page=2`;
-  const urlAttendue = `${base}?redirect_uri=https%3A%2F%2Fapp.exemple.test%2Fcb%3Fcode%3D[caviardé]%26state%3Dok&page=2`;
+  const urlAttendue = `${base}?redirect_uri=[caviardé]&page=[caviardé]`;
   const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-entetes-"));
   const lancer = (cible, args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, cible, ...args], { encoding: "utf8", timeout: 30000 },
     (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
@@ -706,7 +706,7 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2133 : Content-Locati
       `VERT · WWW-Authenticate garde schémas, realm, error et qop ; l'URL à jeton, le jeton nu de Negotiate et le nonce sont remplacés (obtenu ${h["www-authenticate"]})`);
     ok(h.location === "https://sso.exemple.test/authorize?client_id=[caviardé]&redirect_uri=[caviardé]&lang=[caviardé]",
       `VERT · Location garde l'hôte, le chemin et les noms client_id, redirect_uri et lang ; le redirect_uri encodé et son code disparaissent avec la valeur (obtenu ${h.location})`);
-    ok(cap?.url === urlAttendue, `VERT · l'URL capturée garde page=2 et l'encodage du redirect_uri, seul son code est remplacé (obtenu ${cap?.url})`);
+    ok(cap?.url === urlAttendue, `VERT · l'URL capturée garde les noms redirect_uri et page ; le redirect_uri encodé disparaît en entier avec son code, page aussi est remplacé (TF-2390) (obtenu ${cap?.url})`);
     ok(cap?.status === 302 && h["x-content-type-options"] === "nosniff" && cap?.redirections_suivies === false,
       "VERT · le reste de la capture (statut, autre en-tête, drapeau de redirection) est intact");
     const jug = runJson(ORACLE_EXPOSITION, [fichier]);
@@ -843,9 +843,10 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2306 : toute valeur d
     const ecartsEnTete = bordsEnTete.filter(([e, s]) => caviarderUrlEnTete(e) !== s || caviarderUrlEnTete(caviarderUrlEnTete(e)) !== s)
       .map(([e, s]) => `${e} → ${caviarderUrlEnTete(e)} (attendu ${s})`);
     ok(ecartsEnTete.length === 0, `bords de l'URL d'en-tête : relative, sans requête, requête vide, fragment sans paramètre, valeur encodée, séparateur « ; », identifiant et paramètre de chemin, drapeau sans valeur, idempotent (écarts : ${ecartsEnTete.length}${ecartsEnTete.length ? " · " + ecartsEnTete[0] : ""})`);
-    // La capture de l'URL DEMANDÉE reste caviardée par forme de nom (TF-2107) : la décision vise les URL d'en-tête.
+    // TF-2390 : l'URL DEMANDÉE suit la règle de position elle aussi (voir le banc suivant). Le caviardage par forme de nom
+    // (`caviarderUrl`) subsiste pour les valeurs imbriquées et reste exporté, inchangé : il est ici jugé seul.
     const urlParForme = caviarderUrl("https://h.test/p?page=2&meta=SEC&token=SEC");
-    ok(urlParForme === "https://h.test/p?page=2&meta=SEC&token=[caviardé]", `l'URL demandée n'est pas touchée par ce changement : caviardage par forme de nom inchangé (obtenu ${urlParForme})`);
+    ok(urlParForme === "https://h.test/p?page=2&meta=SEC&token=[caviardé]", `le caviardage par forme de nom de la fonction caviarderUrl est inchangé (il ne sert plus à l'adresse capturée, TF-2390) (obtenu ${urlParForme})`);
     const e3 = caviarderEnTetes({
       "REPORT-TO": ['{"endpoints":[{"url":"https:\\/\\/a.test\\/r?s=SEC\\u0026t=2"}]}'], "Reporting-Endpoints": 'a="https://x.test/r?k=SEC", b="https://y.test/r?k=SEC"',
       "Content-Security-Policy": "report-uri https://r.test/c?ctx=SEC; script-src 'self'", "Alt-Svc": 'h3=":443"; ma=86400', Via: "1.1 proxy",
@@ -857,6 +858,98 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2306 : toute valeur d
       && e3["Alt-Svc"] === 'h3=":443"; ma=86400' && e3.Via === "1.1 proxy" && e3["Access-Control-Allow-Origin"] === "https://app.test"
       && e3["X-Autre"] === "garde?code=1" && e3.Location.join() === "/a?x=[caviardé],/b?y=[caviardé]";
     ok(e3Ok, `bords des en-têtes : JSON à barres échappées et \\u0026, liste d'URL entre guillemets, « ; » de la CSP, Alt-Svc, Via, origine, valeur en tableau (${e3Ok ? "tous tenus" : JSON.stringify(e3)})`);
+  } finally {
+    origine.close();
+    fs.rmSync(tmpCap, { recursive: true, force: true });
+  }
+}
+
+// ── TF-2390 · l'URL DEMANDÉE se caviarde elle aussi PAR POSITION (suite de TF-2306) ───────────────
+// TF-2306 a mis les URL portées par un en-tête en caviardage par position ; le champ `url` de la capture (l'adresse passée
+// en argument) et le message d'échec gardaient le caviardage par forme de nom. Un lien d'accès passé en argument
+// (`?meta=<JWT>`, `?s=<signature>`, `#id=<valeur>`) y entrait donc en clair : aucun de ces noms n'est « de forme jeton ».
+// Le banc lance le VRAI capturer.mjs sur une adresse qui porte ces valeurs, sur une réponse qui aboutit puis sur un port
+// fermé (message d'échec), et juge dans les deux sens : ROUGE si une valeur survit ; VERT si schéma, hôte, chemin et NOMS
+// des paramètres restent lisibles. Les faux jetons sont ASSEMBLÉS À L'EXÉCUTION (aucun jeton de test en clair au source).
+console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2390 : l'adresse capturée est caviardée par position, comme les en-têtes)\n");
+{
+  const CAPTURER = path.join(HERE, "..", "scripts", "capturer.mjs");
+  const b64 = (o) => Buffer.from(typeof o === "string" || Buffer.isBuffer(o) ? o : JSON.stringify(o)).toString("base64url");
+  const enteteJwt = b64({ alg: "RS256", typ: "JWT", kid: "cle-de-test" });
+  const signatureJwt = b64(Buffer.from(Array.from({ length: 256 }, (_, i) => (i * 11 + 5) % 256)));
+  let charge = "";
+  for (let n = 0; enteteJwt.length + charge.length + signatureJwt.length + 2 < 684; n++) {
+    charge = b64({ aud: "app.exemple.test", marque: "SECRET-ADRESSE-META-7c1e", bourrage: "x".repeat(n) });
+  }
+  const jetonMeta = `${enteteJwt}.${charge}.${signatureJwt}`;
+  const signatureS = b64("SECRET-ADRESSE-S-" + "4d2f".repeat(8));
+  const valeurFragment = b64("SECRET-ADRESSE-FRAGMENT-" + "6a".repeat(10));
+  const valeurRetour = b64("SECRET-ADRESSE-RETOUR-" + "3c".repeat(10));
+  const SECRETS = { "meta (JWT de 684 caractères)": [jetonMeta, charge, signatureJwt], "s (signature)": [signatureS], "id (fragment)": [valeurFragment], "retour (nom ordinaire)": [valeurRetour] };
+  const TOUS = Object.values(SECRETS).flat();
+  const origine = http.createServer((req, res) => {
+    res.statusCode = 200;
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.end("");
+  });
+  await new Promise((r) => origine.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${origine.address().port}/`;
+  const parametres = `kid=cle-acces-id&meta=${jetonMeta}&s=${signatureS}&retour=${valeurRetour}&page=2`;
+  const adresse = `${base}acces/ouvrir?${parametres}#id=${valeurFragment}&vue=liste`;
+  const adresseAttendue = `${base}acces/ouvrir?kid=[caviardé]&meta=[caviardé]&s=[caviardé]&retour=[caviardé]&page=[caviardé]#id=[caviardé]&vue=[caviardé]`;
+  const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-adresse-"));
+  const lancer = (cible, args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, cible, ...args], { encoding: "utf8", timeout: 30000 },
+    (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+  try {
+    const fichier = path.join(tmpCap, "capture.json");
+    const viaFichier = await lancer(adresse, ["--sortie", fichier]);
+    const brut = fs.existsSync(fichier) ? fs.readFileSync(fichier, "utf8") : "";
+    const viaStdout = await lancer(adresse, []);
+    ok(viaFichier.code === 0 && viaStdout.code === 0 && brut.length > 0,
+      `capturer.mjs capture l'origine locale par une adresse qui porte meta, s, retour et un fragment, par fichier et par sortie standard (codes ${viaFichier.code} / ${viaStdout.code})`);
+    // ROUGE : par paramètre, aucune valeur ne survit ni dans le fichier, ni sur la sortie standard, ni dans les messages.
+    const sortie = brut + viaStdout.stdout + viaFichier.stderr + viaStdout.stderr;
+    for (const [nom, secrets] of Object.entries(SECRETS)) {
+      const survivants = secrets.filter((s) => sortie.includes(s));
+      ok(survivants.length === 0, `ROUGE · la valeur de « ${nom} » de l'adresse capturée est caviardée (valeurs survivantes : ${survivants.length}/${secrets.length})`);
+    }
+    // VERT : schéma, hôte, chemin et NOMS des paramètres restent lisibles ; seules les valeurs sont remplacées.
+    let cap = null;
+    try { cap = JSON.parse(brut); } catch { /* les contrôles suivants le disent */ }
+    ok(cap?.url === adresseAttendue,
+      `VERT · l'adresse capturée garde schéma, hôte, chemin et les NOMS de ses paramètres (requête et fragment), chaque valeur est remplacée par position (obtenu ${cap?.url})`);
+    ok(cap?.status === 200 && cap?.headers?.["x-content-type-options"] === "nosniff" && cap?.redirections_suivies === false,
+      "VERT · le reste de la capture (statut, en-tête, drapeau de redirection) sort intact");
+    const jug = runJson(ORACLE_EXPOSITION, [fichier]);
+    ok(jug.verdict !== "ILLISIBLE" && !TOUS.some((s) => JSON.stringify(jug).includes(s)),
+      `VERT · la capture reste exploitable : oracle-exposition la lit (schéma de l'adresse conservé) sans recopier de valeur (obtenu ${jug.verdict})`);
+    // Le message d'échec : même règle, l'adresse reste reconnaissable.
+    const libre = http.createServer(); await new Promise((r) => libre.listen(0, "127.0.0.1", r));
+    const portMort = libre.address().port; await new Promise((r) => libre.close(r));
+    const echec = await lancer(`http://127.0.0.1:${portMort}/acces/ouvrir?${parametres}#id=${valeurFragment}`, []);
+    const survivantsEchec = TOUS.filter((s) => echec.stderr.includes(s));
+    ok(echec.code === 1 && /capture échouée/.test(echec.stderr) && survivantsEchec.length === 0,
+      `ROUGE · le message d'échec ne recopie aucune valeur de l'adresse demandée (code ${echec.code}, valeurs survivantes : ${survivantsEchec.length})`);
+    ok(echec.stderr.includes("/acces/ouvrir?kid=[caviardé]&meta=[caviardé]&s=[caviardé]&retour=[caviardé]&page=[caviardé]#id=[caviardé]"),
+      `VERT · le message d'échec garde l'hôte, le chemin et les noms des paramètres : l'adresse reste reconnaissable (obtenu ${echec.stderr.trim().slice(0, 220)})`);
+    // Le MOTIF de l'échec peut recopier l'adresse : `fetch` refuse un identifiant « utilisateur:mot-de-passe@ » ou une adresse
+    // mal formée en citant l'adresse EN CLAIR dans son message. Le banc juge ces deux messages réels du moteur.
+    const secretIdentifiant = "SECRET-ADRESSE-MOTDEPASSE-" + "e7".repeat(6);
+    const secretChemin = "SECRET-ADRESSE-JSESSION-" + "1b".repeat(6);
+    const avecIdentifiant = await lancer(`http://utilisateur:${secretIdentifiant}@127.0.0.1:${portMort}/p;jsessionid=${secretChemin}?${parametres}#id=${valeurFragment}`, []);
+    const malFormee = await lancer(`http://127.0.0.1 :${portMort}/p?${parametres}#id=${valeurFragment}`, []);
+    const aTester = [["avec identifiant (refus de fetch)", avecIdentifiant], ["mal formée (refus de fetch)", malFormee]];
+    for (const [nom, r] of aTester) {
+      const survivants = [...TOUS, secretIdentifiant, secretChemin].filter((s) => r.stderr.includes(s));
+      ok(r.code === 1 && /capture échouée/.test(r.stderr) && survivants.length === 0,
+        `ROUGE · le motif de l'échec d'une adresse ${nom} ne recopie ni l'identifiant, ni le paramètre de chemin, ni aucune valeur (code ${r.code}, valeurs survivantes : ${survivants.length})`);
+    }
+    ok(/Request cannot be constructed|Failed to parse URL/.test(avecIdentifiant.stderr + malFormee.stderr) && /meta=\[caviardé\]/.test(avecIdentifiant.stderr + malFormee.stderr),
+      "VERT · le motif de l'échec garde la cause du moteur (refus de l'identifiant, adresse mal formée) et les noms des paramètres : seul le contenu des valeurs disparaît");
+    // Sans paramètre, la capture est octet pour octet celle d'avant : rien n'est caviardé à tort.
+    const nue = await lancer(`${base}accueil`, ["--sortie", path.join(tmpCap, "nue.json")]);
+    const capNue = fs.existsSync(path.join(tmpCap, "nue.json")) ? JSON.parse(fs.readFileSync(path.join(tmpCap, "nue.json"), "utf8")) : null;
+    ok(nue.code === 0 && capNue?.url === `${base}accueil`, `VERT · une adresse sans paramètre sort octet pour octet (obtenu ${capNue?.url})`);
   } finally {
     origine.close();
     fs.rmSync(tmpCap, { recursive: true, force: true });

@@ -5,6 +5,39 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-10 — `scripts/capturer.mjs` : l'adresse capturée elle-même est caviardée par position (TF-2390)
+
+- **Effet** : reste de TF-2306. Le champ `url` de la capture (l'adresse passée en argument) et l'adresse du message
+  d'échec (`capture échouée pour …`) gardaient le caviardage par forme de nom : un lien d'accès passé en argument avec un
+  paramètre de nom ordinaire (`?meta=<JWT>`, `?s=<signature>`, `#id=<valeur>`) entrait en clair dans la capture
+  versionnée avec le produit. Désormais la valeur de chaque paramètre de requête et de fragment de l'adresse est
+  remplacée par `[caviardé]` quel que soit son nom, par la règle de TF-2306 (`caviarderUrlEnTete`), sans second code.
+  Restent lisibles : schéma, hôte, chemin et noms des paramètres
+  (`http://hôte/acces/ouvrir?kid=[caviardé]&meta=[caviardé]&page=[caviardé]#id=[caviardé]`).
+- **Défaut voisin trouvé en le reproduisant** : le MOTIF du message d'échec recopiait l'adresse en clair. `fetch` refuse
+  un identifiant `utilisateur:mot-de-passe@` (« Request cannot be constructed from a URL that includes credentials : … »)
+  et une adresse mal formée (« Failed to parse URL from … ») en citant l'adresse telle que passée ; le message d'échec
+  la reprenait derrière l'adresse caviardée. Le motif est maintenant filtré : l'adresse brute y est remplacée par sa forme
+  caviardée, puis toute autre adresse absolue du motif passe par `caviarderUrlsDeValeur`.
+- **Changement de comportement voulu** : `page=2` d'une adresse devient `page=[caviardé]`, comme dans une URL d'en-tête.
+  Trois attentes du banc, qui lisaient `page=2` (TF-2107, TF-2133 et le message d'échec de TF-2107), sont revues en
+  ce sens, aucune relâchée ; l'attente de TF-2133 sur un `redirect_uri` encodé passe de « seul son code est remplacé » à
+  « la valeur disparaît en entier ». La phrase de TF-2306 ci-dessous qui dit l'adresse capturée inchangée
+  est remplacée par cette entrée. `caviarderUrl` (par forme de nom) reste exporté et sert encore aux valeurs imbriquées.
+- **Limites dites** : celles de TF-2306, inchangées : un élément de requête sans `=` est tenu pour un nom (drapeau), donc un
+  jeton nu (`?<jeton>`) n'est pas vu ; un jeton en segment de chemin reste non traité. Les captures déjà écrites ne sont
+  pas réécrites. Un message du moteur qui citerait l'adresse sous une forme normalisée différente de celle passée est
+  filtré par la seule règle des adresses absolues `schéma://…` : une adresse relative ou tronquée dans un tel message
+  n'est pas vue.
+- **oracle-exposition** : aucune règle ni `VERSION` ne change (0.2.0) ; il ne lit de l'adresse que le schéma, conservé.
+- **Où** : `scripts/capturer.mjs` (deux appels, import), `oracles/self-test.mjs` (nouveau banc TF-2390, trois attentes
+  revues), `README.md`.
+- **Preuve** : le faux JWT de 684 caractères et les valeurs sont assemblés à l'exécution, jamais en clair dans le source.
+  Banc des seuls blocs de capture (TF-2095 à TF-2390, harnais jetable hors dépôt) sur l'ancien `capturer.mjs` avec le nouveau
+  banc : 61 PASS, 10 FAIL (7 contrôles de l'adresse, 3 attentes revues) ; puis, motif de l'échec ajouté et correction de
+  l'adresse seule : 72 PASS, 2 FAIL (les deux messages du moteur, valeurs survivantes 8 et 6) ; avec le correctif
+  complet : 74 PASS, 0 FAIL.
+
 ## 2026-11-09 — `scripts/capturer.mjs` : la valeur de chaque paramètre d'une URL d'en-tête est caviardée par position (TF-2306)
 
 - **Effet** : troisième correction de la même classe (`capture-de-preuve-porte-un-jeton`, après TF-2107 et TF-2133). Une
