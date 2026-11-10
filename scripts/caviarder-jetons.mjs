@@ -7,33 +7,54 @@
 // liste de paramètres imbriquée dans une valeur (redirect_uri=…%3Fcode%3D…) est décodée avant d'être jugée.
 // TF-2306 : dans les URL PORTÉES PAR UN EN-TÊTE (Location, Report-To, Link, CSP…), la valeur de chaque paramètre est
 // remplacée par position, sans juger le nom ; seule l'URL capturée elle-même garde le caviardage par forme de nom.
+// TF-2394 (D-197 (c)) : le NOM compte aussi. Tout en-tête dont le nom contient token, key, secret, auth, session ou
+// password est masqué (X-API-Key, X-CSRF-Token, x-amz-security-token…), sans casse ; le même motif juge les noms de
+// paramètre d'URL, séparés par « & » ou « ; » (`?a=1;token=…`). Authorization, Cookie, Set-Cookie et WWW-Authenticate
+// gardent leur traitement propre. Le motif masque par excès (Public-Key-Pins, Sec-WebSocket-Key, Proxy-Authenticate,
+// token_type, keyword) : choisi, mesuré au CHANGELOG.
 import { CAVIARDE, caviarderSetCookie } from "./caviarder-cookies.mjs";
 
-// Un nom de paramètre est « de forme jeton » s'il est dans la liste exacte ou s'il s'y termine par un mot-jeton.
+// Un nom de paramètre est « de forme jeton » s'il est dans la liste exacte, s'il s'y termine par un mot-jeton ou s'il contient le motif de TF-2394.
 // Comparaison sur le nom décodé (%5F), en minuscules, sans « - », « _ », « . » : api_key, Api-Key et apiKey se confondent.
-// token_type, state, lang, page ne sont pas des jetons : ils restent lisibles.
+// state, lang, page ne sont pas des jetons : ils restent lisibles (token_type est masqué depuis TF-2394, par le motif ci-dessous).
 const NOMS_EXACTS = new Set([
   "token", "code", "key", "apikey", "signature", "sig", "session", "sid", "sessid", "phpsessid", "jsessionid",
   "jwt", "auth", "authorization", "bearer", "password", "passwd", "pwd", "secret", "csrf", "xsrf", "otp",
 ]);
 const SUFFIXES = ["token", "secret", "key", "signature", "password", "session", "sessionid", "jwt"];
 
-export function estNomDeJeton(nom) {
+function normaliserNom(nom) {
   let n = String(nom);
   try { n = decodeURIComponent(n); } catch { /* nom mal encodé : comparé tel quel */ }
-  n = n.toLowerCase().replace(/[-_.\s]/g, "");
-  return n !== "" && (NOMS_EXACTS.has(n) || SUFFIXES.some((s) => n.endsWith(s)));
+  return n.toLowerCase().replace(/[-_.\s]/g, "");
 }
 
-// Caviarde la valeur de chaque « nom=valeur » de jeton d'une liste séparée par « & ». Le nom d'un paramètre de
-// fragment-route (« #/cb?token=x ») est lu après son dernier « ? » ou « / ».
+// TF-2394 (D-197 (c)) : un nom qui CONTIENT token, key, secret, auth, session ou password porte un secret, où qu'il
+// soit dans le nom (X-API-Key, X-CSRF-Token, x-amz-security-token, mysecretvalue). Le motif juge le nom normalisé
+// ci-dessus, donc sans casse. Il vaut pour les en-têtes (caviarderEnTetes) et pour les noms de paramètre d'URL.
+// Il masque des noms inoffensifs par excès (token_type, keyword) : le défaut voulu, la perte de lisibilité d'un
+// nom ordinaire coûte moins qu'un secret versionné avec le produit.
+const MOTIF_NOM = /token|key|secret|auth|session|password/;
+export function nomPorteUnSecret(nom) {
+  return MOTIF_NOM.test(normaliserNom(nom));
+}
+
+export function estNomDeJeton(nom) {
+  const n = normaliserNom(nom);
+  return n !== "" && (NOMS_EXACTS.has(n) || SUFFIXES.some((s) => n.endsWith(s)) || MOTIF_NOM.test(n));
+}
+
+// Caviarde la valeur de chaque « nom=valeur » de jeton d'une liste séparée par « & » ou « ; » (TF-2394 : une valeur
+// après « ; » a son nom jugé comme les autres). Le nom d'un paramètre de fragment-route (« #/cb?token=x ») est lu après
+// son dernier « ? » ou « / ». Les séparateurs sont conservés tels quels.
 function caviarderParametres(liste) {
-  return liste.split("&").map((p) => {
+  return liste.split(/([&;])/).map((p, k) => {
+    if (k % 2 === 1) return p; // séparateur conservé
     const i = p.indexOf("=");
     if (i < 0) return p;
     const nom = p.slice(0, i).replace(/^.*[?/]/, "");
     return estNomDeJeton(nom) ? `${p.slice(0, i)}=${CAVIARDE}` : `${p.slice(0, i + 1)}${caviarderValeurImbriquee(p.slice(i + 1))}`;
-  }).join("&");
+  }).join("");
 }
 
 // TF-2133 : la valeur d'un paramètre sans nom de jeton peut elle-même être une URL ou une liste de paramètres,
@@ -171,6 +192,7 @@ export function caviarderEnTetes(headers) {
     else if (cle === "refresh") sortie[nom] = caviarderRefresh(valeur);
     else if (cle === "x-auth-token") sortie[nom] = Array.isArray(valeur) ? valeur.map(() => CAVIARDE) : CAVIARDE;
     else if (cle === "www-authenticate") sortie[nom] = caviarderDefi(valeur);
+    else if (nomPorteUnSecret(nom)) sortie[nom] = Array.isArray(valeur) ? valeur.map(() => CAVIARDE) : CAVIARDE; // TF-2394 : masquage par motif de nom
     else sortie[nom] = caviarderUrlsDeValeur(valeur); // TF-2306 : toute autre valeur qui porte une URL (Report-To, CSP, Reporting-Endpoints…)
   }
   return sortie;

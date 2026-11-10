@@ -5,6 +5,48 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-10 — `scripts/caviarder-jetons.mjs` : le nom d'un en-tête ou d'un paramètre est jugé par motif (TF-2394, D-197 (c))
+
+- **Effet** : un en-tête dont le nom contient `token`, `key`, `secret`, `auth`, `session` ou `password` (sans casse, séparateurs
+  `-`, `_`, `.` ignorés) est masqué à la capture. Avant, seul `X-Auth-Token` l'était par son nom : `X-API-Key`, `X-CSRF-Token`,
+  `X-Access-Token` et `x-amz-security-token` entraient en clair dans la capture versionnée avec le produit. Le même motif juge
+  les noms de paramètre d'URL et de paramètre de chemin, et la liste de paramètres se sépare maintenant sur `&` et sur `;` :
+  `caviarderUrl("…?a=1;token=zzz")` laissait `zzz` en clair (la valeur de `a` portait tout le reste).
+  Un en-tête à plusieurs valeurs est masqué élément par élément.
+- **Inchangé** : `Authorization` et `Proxy-Authorization` (schéma conservé), `Cookie`, `Set-Cookie`, `WWW-Authenticate`
+  (schéma, realm et error conservés) gardent leur traitement propre, qui passe avant le motif. Les en-têtes neutres sortent
+  octet pour octet.
+- **Portée dite** : sur l'adresse capturée et les URL d'en-tête, la position (TF-2306, TF-2390) masquait déjà `a=1;token=…`,
+  car la valeur de `a` est remplacée en entier. La forme fautive vivait dans `caviarderUrl` (par nom), qui sert aux valeurs
+  imbriquées et aux paramètres de chemin, et reste exportée. Les en-têtes à nom suspect, eux, fuyaient bien de bout en bout.
+- **Faux positifs mesurés** (registre IANA des champs HTTP, `field-names.csv`, 260 noms, relevé le 10/11/2026 ; une valeur neutre
+  passée à chaque nom) : 18 noms masqués. Quatre l'étaient déjà (Authorization, Proxy-Authorization, Cookie, Set-Cookie).
+  Les 14 autres : Authentication-Control, Authentication-Info, Proxy-Authentication-Info, Concealed-Auth-Export,
+  Optional-WWW-Authenticate, Proxy-Authenticate, CMCD-Session, CTA-Common-Access-Token, Include-Referred-Token-Binding-ID,
+  Lock-Token, Public-Key-Pins, Public-Key-Pins-Report-Only, Sec-Token-Binding, Sec-WebSocket-Key. Masqués à tort, sans secret :
+  les deux Public-Key-Pins (empreintes publiques), Sec-WebSocket-Key (nonce de poignée de main), Include-Referred-Token-Binding-ID
+  (drapeau) et les défis Proxy-Authenticate, Optional-WWW-Authenticate et Authentication-Control (schéma et realm, que
+  WWW-Authenticate garde lisibles). `Keep-Alive` n'est pas masqué : « keep » ne contient pas « key ». Hors registre :
+  `:authority` (pseudo-en-tête HTTP/2, jamais rendu par `fetch`) serait masqué. Côté paramètres d'URL, sur 32 noms usuels testés,
+  11 deviennent masqués : `token_type`, `keyword`, `keywords`, `author`, `authority`, `monkey`, `turkey`, `sessions`, `keyboard`,
+  `hotkey`, `passwordless`.
+- **Décision** : aucun n'est exempté. Aucun oracle de la forge ne lit ces noms, une liste d'exemption est l'endroit où un secret
+  se glisse, et la perte (lisibilité d'un nom ordinaire dans une capture) coûte moins qu'un secret versionné. Le choix est épinglé
+  par le banc (10 noms du registre et 4 noms d'URL attendus masqués) ; le revoir se fait en connaissance de ce banc.
+- **Attente revue, aucune relâchée** : le bord d'URL de TF-2107 qui lisait `token_type=x` lit `token_type=[caviardé]`. Le commentaire
+  qui disait `token_type` lisible est corrigé.
+- **Limites dites** : le motif ne couvre pas `signature`, `sig`, `csrf`, `jwt` ni `code` comme nom d'en-tête (`X-Amz-Signature`,
+  `Signature`, un en-tête `X-Csrf` sans « token » sortent en clair) ; ces mots restent jugés par la liste de noms pour les seuls
+  paramètres d'URL. Un secret porté par un en-tête au nom neutre (`X-Foo`) n'est pas vu. Les captures déjà écrites ne sont pas réécrites.
+- **oracle-exposition** : aucune règle ni `VERSION` ne change (0.2.0).
+- **Où** : `scripts/caviarder-jetons.mjs` (motif, séparateur `;`, branche des en-têtes), `oracles/self-test.mjs` (deux nouveaux
+  blocs, une attente revue), `README.md`.
+- **Preuve** : valeurs factices assemblées à l'exécution. Banc du caviardage sur le code d'avant : 4 PASS, 17 FAIL (neuf en-têtes,
+  le tableau, sept formes d'URL). De bout en bout, sur le `capturer.mjs` d'avant : 7 valeurs sur 8 survivent. Recette complète
+  après : 198 PASS, 0 FAIL, 0 SKIP. Un premier passage de la recette sur l'arbre propre avait rendu 167 PASS, 3 FAIL, les trois
+  sur `oracle-sca` (pip-audit lent sur le réseau du poste, fixtures pip et poetry rendues `ILLISIBLE`) ; ces fixtures rejouées une à
+  une rendent PASS, FAIL, FAIL attendus, et le passage suivant est vert.
+
 ## 2026-11-10 — `scripts/capturer.mjs` : l'adresse capturée elle-même est caviardée par position (TF-2390)
 
 - **Effet** : reste de TF-2306. Le champ `url` de la capture (l'adresse passée en argument) et l'adresse du message

@@ -618,7 +618,7 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2107 : URL, Location,
       ["https://h.test/#/cb?token=9&a=1", "https://h.test/#/cb?token=[caviardé]&a=1"],
       ["https://h.test/p?api%5Fkey=9&x-api-key=8&X-Amz-Signature=7&Sig=6", "https://h.test/p?api%5Fkey=[caviardé]&x-api-key=[caviardé]&X-Amz-Signature=[caviardé]&Sig=[caviardé]"],
       ["https://h.test/p?token=&k&jwt=a=b", "https://h.test/p?token=[caviardé]&k&jwt=[caviardé]"],
-      ["https://h.test/p?token_type=x&state=y&lang=fr&page=3&sortkey=", "https://h.test/p?token_type=x&state=y&lang=fr&page=3&sortkey=[caviardé]"],
+      ["https://h.test/p?token_type=x&state=y&lang=fr&page=3&sortkey=", "https://h.test/p?token_type=[caviardé]&state=y&lang=fr&page=3&sortkey=[caviardé]"], // TF-2394 : token_type contient « token », masqué par le motif (attente durcie, aucune relâchée)
       ["https://h.test/p/a?x=1", "https://h.test/p/a?x=1"],
       ["", ""],
     ];
@@ -950,6 +950,102 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2390 : l'adresse capt
     const nue = await lancer(`${base}accueil`, ["--sortie", path.join(tmpCap, "nue.json")]);
     const capNue = fs.existsSync(path.join(tmpCap, "nue.json")) ? JSON.parse(fs.readFileSync(path.join(tmpCap, "nue.json"), "utf8")) : null;
     ok(nue.code === 0 && capNue?.url === `${base}accueil`, `VERT · une adresse sans paramètre sort octet pour octet (obtenu ${capNue?.url})`);
+  } finally {
+    origine.close();
+    fs.rmSync(tmpCap, { recursive: true, force: true });
+  }
+}
+
+// ── TF-2394 (D-197 (c)) · le caviardage juge aussi le NOM : motif token, key, secret, auth, session, password ────────────
+// Les caviardages de TF-2107 et TF-2133 ne reconnaissaient par nom qu'un seul en-tête (X-Auth-Token) et des noms de
+// paramètre à liste exacte ou à suffixe : `X-API-Key`, `X-CSRF-Token`, `X-Access-Token` et `x-amz-security-token`
+// sortaient en clair d'une capture versionnée avec le produit, et `?a=1;token=…` échappait à la lecture par « & ».
+// Chaque forme fautive est ici une recette ROUGE avant le code, VERTE après. Les valeurs sont factices, ASSEMBLÉES À
+// L'EXÉCUTION (aucun jeton de test en clair au source). Les témoins verts : les en-têtes neutres restent lisibles.
+console.log("\nSELF-TEST forge-websec — caviarder-jetons.mjs (TF-2394 : masquage par motif de nom, en-têtes et paramètres d'URL)\n");
+{
+  const { caviarderEnTetes, caviarderUrl, estNomDeJeton } = await import(pathToFileURL(path.join(HERE, "..", "scripts", "caviarder-jetons.mjs")).href);
+  const V = ["valeur", "factice", "ab12".repeat(3)].join("-");
+  const M = "[caviardé]";
+  const enTetesRouges = ["X-API-Key", "X-CSRF-Token", "X-Access-Token", "x-amz-security-token", "X-API-KEY", "X-Session-Id", "X-Client-Secret", "X-Password", "X-Authorization-Extra"];
+  for (const nom of enTetesRouges) {
+    const sortie = caviarderEnTetes({ [nom]: V });
+    ok(sortie[nom] === M && !JSON.stringify(sortie).includes(V), `ROUGE · l'en-tête « ${nom} » est masqué par son nom, casse comprise (obtenu ${sortie[nom]})`);
+  }
+  const tableau = caviarderEnTetes({ "X-Api-Key": [V, V + "2"] });
+  ok(Array.isArray(tableau["X-Api-Key"]) && tableau["X-Api-Key"].every((v) => v === M) && tableau["X-Api-Key"].length === 2,
+    `ROUGE · un en-tête à nom suspect porté en tableau est masqué élément par élément (obtenu ${JSON.stringify(tableau["X-Api-Key"])})`);
+  const urlsRouges = [
+    [`https://h.test/p?a=1;token=${V}`, `https://h.test/p?a=1;token=${M}`, "« ; » après un paramètre ordinaire"],
+    [`https://h.test/p?a=1&b=2;key=${V}&c=3`, `https://h.test/p?a=1&b=2;key=${M}&c=3`, "« ; » au milieu d'une requête séparée par « & »"],
+    [`https://h.test/p?mysecretvalue=${V}&page=2`, `https://h.test/p?mysecretvalue=${M}&page=2`, "motif au milieu du nom (secret)"],
+    [`https://h.test/p?auth_code=${V}`, `https://h.test/p?auth_code=${M}`, "motif en début de nom (auth)"],
+    [`https://h.test/p?x=1#a=2;session_state=${V}`, `https://h.test/p?x=1#a=2;session_state=${M}`, "« ; » dans le fragment, motif session"],
+    [`https://h.test/p;authx=${V}/q?z=1`, `https://h.test/p;authx=${M}/q?z=1`, "paramètre de chemin"],
+    [`https://h.test/p?r=https%3A%2F%2Fa.test%2Fcb%3Fa%3D1%3Bapikey%3D${V}`, `https://h.test/p?r=https%3A%2F%2Fa.test%2Fcb%3Fa%3D1%3Bapikey%3D${M}`, "URL imbriquée encodée, « ; » comprise (le marqueur reste lisible)"],
+  ];
+  for (const [entree, attendu, libelle] of urlsRouges) {
+    const sortie = caviarderUrl(entree);
+    ok(sortie === attendu && !sortie.includes(V) && caviarderUrl(sortie) === sortie, `ROUGE · URL, ${libelle} : la valeur disparaît, idempotent (obtenu ${sortie.replace(V, "<V>")})`);
+  }
+  const neutres = { "Content-Type": "text/html; charset=utf-8", Accept: "text/html,*/*;q=0.8", "Cache-Control": "no-store, max-age=0", "User-Agent": "Mozilla/5.0", "Keep-Alive": "timeout=5, max=1000", "Content-Length": "123", "X-Content-Type-Options": "nosniff", "Strict-Transport-Security": "max-age=63072000", "Content-Security-Policy": "default-src 'self'" };
+  const sortieNeutres = caviarderEnTetes(neutres);
+  ok(JSON.stringify(sortieNeutres) === JSON.stringify(neutres), `VERT · les en-têtes neutres (Content-Type, Accept, Cache-Control, User-Agent, Keep-Alive, CSP, HSTS…) sortent octet pour octet (${Object.keys(neutres).filter((k) => sortieNeutres[k] !== neutres[k]).join(", ") || "aucun masqué"})`);
+  const dejaCouverts = caviarderEnTetes({ Authorization: `Bearer ${V}`, "Proxy-Authorization": `Basic ${V}`, Cookie: `sid=${V}; theme=clair`, "Set-Cookie": [`sid=${V}; Path=/; HttpOnly`], "X-Auth-Token": V, "WWW-Authenticate": 'Bearer realm="api", error="invalid_token"' });
+  ok(dejaCouverts.Authorization === `Bearer ${M}` && dejaCouverts["Proxy-Authorization"] === `Basic ${M}` && !JSON.stringify(dejaCouverts).includes(V) && dejaCouverts["X-Auth-Token"] === M,
+    `VERT · les cas déjà couverts restent masqués, schéma d'Authorization conservé (obtenu ${JSON.stringify(dejaCouverts).replace(V, "<V>")})`);
+  ok(dejaCouverts["WWW-Authenticate"] === 'Bearer realm="api", error="invalid_token"', `VERT · WWW-Authenticate garde son défi (schéma, realm, error) : le motif ne l'efface pas en entier (obtenu ${dejaCouverts["WWW-Authenticate"]})`);
+  const urlNeutre = "https://h.test/p?page=2&lang=fr&state=abc&q=a;b&sort=asc";
+  ok(caviarderUrl(urlNeutre) === urlNeutre, `VERT · une URL sans nom suspect sort octet pour octet par caviarderUrl, « ; » compris (obtenu ${caviarderUrl(urlNeutre)})`);
+  // Faux positifs mesurés le 10/11/2026 sur le registre IANA des champs HTTP (260 noms, field-names.csv) : 14 noms hors
+  // Authorization, Cookie, Set-Cookie et Proxy-Authorization sont masqués par le motif. Aucun n'est lu par un oracle de
+  // la forge. Le choix est de les laisser masqués, sans liste d'exemption (une liste est l'endroit où un secret se glisse).
+  // Les noms ci-dessous épinglent ce choix ; le contraire, un en-tête usuel masqué à tort, fait échouer le témoin suivant.
+  const usuels = ["Accept", "Accept-Charset", "Accept-Encoding", "Accept-Language", "Accept-Ranges", "Access-Control-Allow-Credentials", "Access-Control-Allow-Headers",
+    "Access-Control-Allow-Methods", "Access-Control-Allow-Origin", "Access-Control-Expose-Headers", "Access-Control-Max-Age", "Age", "Allow", "Alt-Svc", "Cache-Control",
+    "Clear-Site-Data", "Connection", "Content-Disposition", "Content-Encoding", "Content-Language", "Content-Length", "Content-Location", "Content-Range",
+    "Content-Security-Policy", "Content-Type", "Cross-Origin-Embedder-Policy", "Cross-Origin-Opener-Policy", "Cross-Origin-Resource-Policy", "Date", "ETag", "Expect",
+    "Expires", "Forwarded", "From", "Host", "If-Match", "If-Modified-Since", "If-None-Match", "Keep-Alive", "Last-Modified", "Link", "Max-Forwards", "NEL", "Origin",
+    "Permissions-Policy", "Pragma", "Range", "Referer", "Referrer-Policy", "Refresh", "Retry-After", "Sec-Fetch-Dest", "Sec-Fetch-Mode", "Sec-Fetch-Site",
+    "Sec-WebSocket-Accept", "Server", "Server-Timing", "Strict-Transport-Security", "TE", "Timing-Allow-Origin", "Trailer", "Transfer-Encoding", "Upgrade",
+    "Upgrade-Insecure-Requests", "User-Agent", "Vary", "Via", "Warning", "X-Content-Type-Options", "X-Frame-Options", "X-Powered-By", "X-Request-Id", "X-XSS-Protection"];
+  const usuelsMasques = usuels.filter((n) => caviarderEnTetes({ [n]: "valeur-neutre" })[n] === M);
+  ok(usuelsMasques.length === 0, `VERT · ${usuels.length} en-têtes usuels du registre IANA ne sont pas masqués par le motif, dont Keep-Alive (« keep » ne contient pas « key ») (masqués à tort : ${usuelsMasques.join(", ") || "aucun"})`);
+  const excesAssumes = ["Public-Key-Pins", "Sec-WebSocket-Key", "Proxy-Authenticate", "Authentication-Info", "Lock-Token", "Sec-Token-Binding", "Include-Referred-Token-Binding-ID", "Optional-WWW-Authenticate", "Authentication-Control", "CMCD-Session"];
+  const excesLus = excesAssumes.filter((n) => caviarderEnTetes({ [n]: "valeur-neutre" })[n] !== M);
+  ok(excesLus.length === 0, `excès assumés : ${excesAssumes.length} noms du registre IANA dont le nom contient le motif sont masqués, même sans secret (clairs à tort : ${excesLus.join(", ") || "aucun"})`);
+  ok(["token_type", "keyword", "author", "sessions"].every((n) => estNomDeJeton(n)) && ["page", "lang", "state", "sort", "q", "utm_source"].every((n) => !estNomDeJeton(n)),
+    "excès assumé côté URL : token_type, keyword, author et sessions (le motif) sont masqués ; page, lang, state, sort, q et utm_source restent lisibles");
+}
+
+// TF-2394 · de bout en bout : le VRAI capturer.mjs, sur une réponse qui porte ces en-têtes, ne les écrit pas en clair.
+console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2394 : en-têtes à nom suspect d'une réponse réelle)\n");
+{
+  const CAPTURER = path.join(HERE, "..", "scripts", "capturer.mjs");
+  const V = ["valeur", "factice", "cd34".repeat(3)].join("-");
+  const origine = http.createServer((req, res) => {
+    res.statusCode = 200;
+    for (const [n, v] of [["X-API-Key", V + "-1"], ["X-CSRF-Token", V + "-2"], ["X-Access-Token", V + "-3"], ["x-amz-security-token", V + "-4"], ["X-Session-Id", V + "-5"],
+      ["X-Client-Secret", V + "-6"], ["X-Password-Hint", V + "-7"], ["X-Content-Type-Options", "nosniff"], ["Cache-Control", "no-store"], ["Keep-Alive", "timeout=5"]]) res.setHeader(n, v);
+    res.end("");
+  });
+  await new Promise((r) => origine.listen(0, "127.0.0.1", r));
+  const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-nomsuspect-"));
+  try {
+    const fichier = path.join(tmpCap, "capture.json");
+    const r = await new Promise((resolve) => execFile(process.execPath, [CAPTURER, `http://127.0.0.1:${origine.address().port}/?a=1;token=${V}-8`, "--sortie", fichier], { encoding: "utf8", timeout: 30000 },
+      (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+    const brut = fs.existsSync(fichier) ? fs.readFileSync(fichier, "utf8") : "";
+    ok(r.code === 0 && brut.length > 0, `capturer.mjs capture l'origine locale qui répond avec sept en-têtes à nom suspect (code ${r.code})`);
+    const survivants = [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => (brut + r.stdout + r.stderr).includes(`${V}-${n}`));
+    ok(survivants.length === 0, `ROUGE · aucune des huit valeurs (sept en-têtes et le « ; token= » de l'adresse) ne survit dans la capture (survivantes : ${survivants.join(", ") || "aucune"})`);
+    let cap = null;
+    try { cap = JSON.parse(brut); } catch { /* le contrôle suivant le dit */ }
+    ok(cap?.headers?.["x-api-key"] === "[caviardé]" && cap?.headers?.["x-amz-security-token"] === "[caviardé]" && cap?.headers?.["x-content-type-options"] === "nosniff"
+      && cap?.headers?.["cache-control"] === "no-store" && cap?.headers?.["keep-alive"] === "timeout=5",
+      `VERT · les noms restent lisibles, les valeurs suspectes sont remplacées, les en-têtes neutres sortent intacts (obtenu ${JSON.stringify(cap?.headers)})`);
+    const jug = runJson(ORACLE_EXPOSITION, [fichier]);
+    ok(jug.verdict !== "ILLISIBLE", `VERT · la capture reste exploitable par oracle-exposition (obtenu ${jug.verdict})`);
   } finally {
     origine.close();
     fs.rmSync(tmpCap, { recursive: true, force: true });
