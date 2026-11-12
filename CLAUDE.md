@@ -37,10 +37,12 @@ Détail complet : `README.md`. Mandat d'origine : TF-0123
   sens — verte passe, rouge échoue pour la bonne raison). Le volet `oracle-sca` peut
   légitimement rendre des SKIP motivés selon l'outillage du poste — ce n'est pas un échec du
   self-test, mais ce n'est pas non plus une preuve : ne pas la présenter comme telle.
-- **v0 : pas de pentest ; DAST outillé mais non prouvé en exécution.** `oracle-dast` enveloppe
-  ZAP (garde-fou et lecture de rapport prouvés), mais ZAP n'est installé sur aucun poste : la
-  branche d'exécution réelle reste à prouver — dette D-W1 requalifiée, pas close. Limites
-  détaillées dans `README.md §Limites`, jamais promises au-delà.
+- **v0 : pas de pentest ; DAST prouvé sur une cible de fixture locale seulement.** `oracle-dast`
+  enveloppe ZAP : garde-fou et lecture de rapport par le self-test, modes passif et actif par
+  `scripts/preuve-dast-actif.mjs` (vrai ZAP par Docker, contre `fixtures/dast/cible-locale.mjs`,
+  jamais un service tiers). Un mode ne se rabat jamais sur l'autre : un ZAP de la mauvaise forme est
+  un `SKIP`. Applications riches et ZAP natif non prouvés. Limites détaillées dans
+  `README.md §Limites`, jamais promises au-delà.
 
 ## Point d'entrée
 
@@ -51,6 +53,7 @@ node scripts/capturer.mjs <url> --sortie c.json     # capture réelle
 node oracles/oracle-exposition.mjs c.json           # scan de l'exposition HTTP
 node oracles/oracle-exposition-statique.mjs <dossier>  # fichier _headers de Cloudflare, mêmes règles EX
 node oracles/oracle-sca.mjs <dossier-cible>          # scan des dépendances vulnérables
-node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json>   # DAST, sur périmètre autorisé
+node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--mode passif|actif]   # DAST, sur périmètre autorisé
+node scripts/preuve-dast-actif.mjs                   # preuve réelle du DAST, cible locale de fixture (Docker + image ZAP), hors self-test
 node oracles/oracle-workflows.mjs <dépôt>            # durcissement des workflows GitHub Actions (WF-1..WF-5)
 ```

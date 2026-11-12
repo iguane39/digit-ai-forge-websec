@@ -5,6 +5,40 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-12 — `oracle-dast` 0.2.0 : le mode actif lance un vrai balayage actif, et l'autorisation porte en-tête, débit et exclusions (TF-2444)
+
+- **Effet** : `--mode actif` exigeait `actif_autorise: true` puis lançait quand même `zap-baseline.py`, la passe passive.
+  Il lance maintenant `zap-full-scan.py` (araignée, puis attaque active des URL trouvées), ou le balayage rapide de
+  `zap.sh` / `zap.bat`, et le mode passif reste sur `zap-baseline.py`. Un mode ne se rabat jamais sur l'autre : un ZAP
+  de la mauvaise forme rend un `SKIP` (`DAST-ACTIF-IMPOSSIBLE`, `DAST-PASSIF-IMPOSSIBLE`) et rien n'est lancé. Sans
+  `actif_autorise: true`, le mode actif reste refusé (`DAST-AUTZ-MODE`), avant toute émission.
+- **Options du mandat** : le fichier d'autorisation porte `en_tete_acces` (`{nom, valeur}` ou `{nom, valeur_env}`, pour ne
+  pas écrire un secret dans le mandat), `debit_max_requetes_par_seconde` (un fil, `ceil(1000/n)` ms entre deux requêtes) et
+  `exclusions` (chemins, préfixe compris). Elles valent dans les deux modes, car une limite que le mandat pose ne se tient
+  pas dans un seul. Une option mal formée, ou une variable d'en-tête absente, refuse le balayage (`DAST-AUTZ-CHAMPS`). La
+  valeur de l'en-tête ne sort pas du verdict ; la règle `replacer` de ZAP est bornée à l'origine autorisée.
+- **Constat traité sur la même ligne** : le balayage rapide de `zap.sh` / `zap.bat` (`-quickurl`, « The URL to attack » dans
+  l'aide de ZAP 2.17.0) servait le mode passif jusqu'ici, et attaquait. Il est maintenant refusé en passif.
+- **Avant, mesuré avec le vrai ZAP 2.17.0 (image Docker) contre `fixtures/dast/cible-locale.mjs`** : un balayage `--mode actif`
+  avec `actif_autorise: true` a livré 8 requêtes en 0,4 s, 0 sonde active (la route d'exclusion atteinte une fois, aucun
+  en-tête), en 219 s dont l'essentiel est le démarrage de ZAP.
+- **Après, même banc** (`scripts/preuve-dast-actif.mjs`, une exécution des scénarios A, B et C, 16 assertions, 16 PASS,
+  0 FAIL) : passif, 7 requêtes, 0 sonde active, 0 requête vers la route exclue, 1 requête privée sur 1 avec l'en-tête ;
+  actif sans option (témoin), 958 requêtes dont 659 sondes actives, 40 requêtes vers la route à exclure, 0 en-tête sur 39
+  requêtes privées, pic de 134 requêtes/s ; actif avec les trois options (borne de 10/s), 891 requêtes dont 634 sondes
+  actives, 0 vers la route exclue, l'en-tête sur 40 requêtes privées sur 40, pic de 9 requêtes/s. Une première série
+  (C seul, puis A et B) avait donné les mêmes verdicts. Essai séparé : une règle `replacer` dont `url` ne correspond pas à
+  la cible laisse la requête privée sans l'en-tête (0 sur 1), donc la clé borne bien la règle.
+- **Banc** : 28 cas ajoutés au self-test, avec un ZAP simulé (`fixtures/dast/zap-simule.mjs`) qui enregistre sa ligne de
+  commande sans rien émettre ; chaque cas force `WEBSEC_DAST_ZAP` sur lui, et le self-test ne lance toujours aucun scan.
+  Contre le code d'origine, les cas du mode actif échouent (obtenu SKIP : l'ancien code ne sait pas jouer le ZAP simulé),
+  ce qui ne reproduit pas le défaut : la reproduction est la mesure avec le vrai ZAP ci-dessus. Les 13 cas existants passent
+  sans modification d'assertion. Self-test intégral : 200 PASS, 0 FAIL, 1 SKIP avant (le SKIP : `pip-audit` direct au-delà de
+  90 s, étranger à l'item) ; 229 PASS, 0 FAIL, 0 SKIP après, soit 28 cas ajoutés et ce contrôle réseau qui passe cette fois.
+- **Reste non prouvé** : ZAP natif (aucune installation sur le poste ; `zap.sh` en balayage rapide jamais lancé), application
+  riche et authentifiée (la cible de preuve compte quatre routes). La valeur de l'en-tête figure dans la ligne de commande du
+  processus ZAP le temps du balayage, ce que le verdict déclare dans `non_juge`.
+
 ## 2026-11-12 — `oracle-sca` 0.2.1 et self-test : le SKIP « pip-audit absent » nomme la commande épinglée, et uvx sert (TF-2398)
 
 - **Effet** : sur un poste sans `pip-audit` mais avec `uvx`, le self-test jouait les sens rouge et vert pip en SKIP

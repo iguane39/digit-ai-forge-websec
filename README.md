@@ -31,7 +31,7 @@ obtenir. Détail : [README de la Factory](https://github.com/iguane39/digit-ai-f
 | **Juger l'exposition runtime** | savoir si mon produit servi expose une configuration dangereuse | `node scripts\capturer.mjs <url> <capture.json> puis node oracles\oracle-exposition.mjs <capture.json>` | prouvé (experimental) |
 | **Scanner les dépendances vulnérables (SCA)** | savoir si mes dépendances portent des CVE connues, avec seuils | `node oracles\oracle-sca.mjs <racine-produit> [--seuils f.json]` | prouvé (experimental) |
 | **Tenir un contrat de sécurité ASVS L1** | m'engager sur un niveau de sécurité vérifiable et daté | `referentiels\asvs-l1.md (frontmatter challenge_date)` | déclaré (experimental) |
-| **Juger un scan dynamique (DAST)** | savoir ce qu'un scan ZAP relève sur une cible **autorisée par écrit**, en verdict à seuils | `node oracles\oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | prouvé pour le garde-fou et la lecture de rapport ; **exécution ZAP non prouvée** (ZAP absent du poste) |
+| **Juger un scan dynamique (DAST)** | savoir ce qu'un scan ZAP relève sur une cible **autorisée par écrit**, en verdict à seuils | `node oracles\oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | prouvé pour le garde-fou, la lecture de rapport et les modes passif et actif (vrai ZAP, cible de fixture locale, 12/11/2026) ; applications riches et authentifiées non prouvées |
 | **Dérouler une méthode de test de sécurité** | savoir *comment* on teste une exigence ASVS, cas par cas | `referentiels\wstg-cas.md` (39 cas WSTG 4.2 curés, rattachés à `asvs-l1.md`) | déclaré (experimental) |
 | **Commander une revue de code** | faire relire le code d'un produit par un agent, sous plafond de jetons et au format de rapport fixe | `referentielsevue-de-code.md` (consigne type, tranches de 2 000 lignes, 4 statuts de constat) | déclaré (experimental) |
 
@@ -81,9 +81,9 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 | **Capturer une réponse HTTP réelle** | produire l'entrée de l'oracle d'exposition depuis une URL réelle | `node scripts/capturer.mjs <url> [--sortie <fichier>]` | **prouvé** (fetch natif, zéro dépendance) — ne juge rien, capture seulement ; la valeur des cookies posés (TF-2095) et les autres porteurs de jeton (paramètres de forme jeton de l'URL et de Location, Authorization, Proxy-Authorization, Cookie, TF-2107 ; Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate et le jeton caché dans une URL imbriquée ou percent-encodée, TF-2133) sont caviardés à la capture, noms et attributs gardés ; dans toute URL portée par un en-tête (Location, Report-To, Link, Reporting-Endpoints, `report-uri`…), la valeur de chaque paramètre est remplacée par position, quel que soit son nom (TF-2306) : schéma, hôte, chemin et noms des paramètres restent lisibles ; l'adresse capturée elle-même (champ `url`) et celle du message d'échec suivent la même règle de position (TF-2390) ; tout en-tête dont le nom contient token, key, secret, auth, session ou password est masqué, et le même motif juge les noms de paramètre d'URL séparés par `&` ou `;` (TF-2394, D-197 (c)) |
 | **Juger un fichier `_headers`** | savoir, avant de déployer sur Cloudflare (Workers static assets ou Pages), si les en-têtes que déclare mon `_headers` tiennent les règles EX | `node oracles/oracle-exposition-statique.mjs <_headers \| dossier>` | **prouvé** — règles EX-1..EX-11 réutilisées sans copie, HD-1 et HD-2 sourcées sur developers.cloudflare.com (lu le 28/10/2026), 8 fixtures (`fixtures/exposition-statique/`) |
 | **Juger les dépendances vulnérables** | savoir si les dépendances d'un produit portent des CVE connues | `node oracles/oracle-sca.mjs <dossier-cible>` | **prouvé** — npm (`npm audit`) et pip (`pip-audit`, ou `uvx pip-audit` ; `requirements.txt`, `uv.lock`, `poetry.lock`) enveloppés, fixtures vertes/rouges par écosystème, SKIP rendu comme un manque nommé si l'outillage ou le réseau manque |
-| **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | **partiellement prouvé** — garde-fou dual-use et lecture de rapport ZAP prouvés (13 fixtures, `fixtures/dast/`) ; **branche d'exécution ZAP non prouvée** faute de ZAP sur le poste (SKIP motivé) |
+| **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | **partiellement prouvé** — garde-fou dual-use, lecture de rapport ZAP, modes passif et actif et options de balayage prouvés par 41 cas de self-test (`fixtures/dast/`, ZAP simulé) ; exécution avec le vrai ZAP (Docker) prouvée contre une cible de fixture locale par `scripts/preuve-dast-actif.mjs` ; applications riches et authentifiées, et ZAP natif, non prouvés |
 | **Juger les workflows GitHub Actions** | savoir si les workflows qui construisent et livrent mon produit donnent trop de droits, exécutent du code non épinglé ou injectable | `node oracles/oracle-workflows.mjs <dépôt \| dossier \| fichier.yml>` | **prouvé** — 5 règles WF-1..WF-5 sourcées sur docs.github.com (lu le 28/10/2026), 15 fichiers de fixtures (`fixtures/workflows/`), lecteur YAML natif identique à PyYAML sur 30 fichiers le 28/10/2026 |
-| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 138 PASS, 0 FAIL, 1 SKIP motivé à la dernière exécution (06/11/2026), dont le volet SCA dépendant de l'outillage réel du poste |
+| **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — 229 PASS, 0 FAIL, 0 SKIP à la dernière exécution (12/11/2026 ; 200 PASS et 1 SKIP avant TF-2444), dont le volet SCA dépendant de l'outillage réel du poste |
 
 ### `oracle-exposition.mjs` — 11 règles EX-1..EX-11
 
@@ -196,10 +196,33 @@ en scan.
 
 Deux voies une fois le garde-fou franchi : `--rapport <zap.json>` juge un rapport ZAP **déjà
 produit** (aucune émission vers la cible), sinon l'oracle cherche ZAP sur le poste
-(`WEBSEC_DAST_ZAP`, puis `zap-baseline.py` / `zap.sh` / `zap.bat` — résolus dans le `PATH`,
-jamais exécutés « pour voir ») et lance une passe **baseline passive**. Seuils par défaut
+(`WEBSEC_DAST_ZAP`, puis les commandes du mode — résolues dans le `PATH`, jamais exécutées
+« pour voir ») et lance le balayage **du mode demandé**, puis juge son rapport. Seuils par défaut
 `high=0, medium=0` (`low`/`informational` comptés en synthèse, non bloquants), surchargeables
 par `--seuils <f.json>`.
+
+| Mode | Commande cherchée | Ce qui part vers la cible |
+|---|---|---|
+| `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker (`zap-baseline.py`) | l'araignée et les règles passives, aucune attaque |
+| `actif` (`actif_autorise: true`) | `zap-full-scan.py`, `zap.sh` ou `zap.bat`, sinon l'image Docker (`zap-full-scan.py`) | l'araignée, puis l'attaque active de chaque URL trouvée |
+
+Un mode ne se rabat jamais sur l'autre (TF-2444). Un ZAP qui ne sait que `baseline` ne rend pas un
+« actif » : `SKIP` `DAST-ACTIF-IMPOSSIBLE`. Un ZAP qui attaque (`zap-full-scan.py`, ou le balayage
+rapide de `zap.sh` / `zap.bat`, dont l'aide de ZAP 2.17.0 dit « The URL to attack ») ne sert pas un
+« passif » : `SKIP` `DAST-PASSIF-IMPOSSIBLE`. Dans les deux cas rien n'est lancé.
+
+Le fichier d'autorisation porte aussi les limites du balayage, les mêmes dans les deux modes :
+
+| Champ | Effet sur ZAP | Mal formé |
+|---|---|---|
+| `en_tete_acces` `{nom, valeur}` ou `{nom, valeur_env}` | un en-tête ajouté à toute requête vers l'origine autorisée (règle `replacer`, bornée à cette origine) ; `valeur_env` nomme une variable d'environnement, pour ne pas écrire un secret dans le mandat | `DAST-AUTZ-CHAMPS` ; une variable absente refuse aussi le balayage |
+| `debit_max_requetes_par_seconde` (nombre, 0 < n ≤ 1000) | un fil et `ceil(1000/n)` ms entre deux requêtes, pour l'araignée et pour l'attaque | `DAST-AUTZ-CHAMPS` |
+| `exclusions` (liste de chemins, `/…`) | aucune requête vers l'origine autorisée + chemin (préfixe compris) : exclusion globale ZAP | `DAST-AUTZ-CHAMPS` |
+
+Une option présente et mal formée refuse le balayage : il ne part jamais sans une limite que le
+mandat avait posée. La voie `--rapport` n'émet rien et ne lit pas ces champs. La valeur de l'en-tête
+ne sort jamais dans le verdict (`synthese.balayage` en garde le nom) ; elle figure dans la ligne de
+commande du processus ZAP le temps du balayage.
 
 ```
 node oracles/oracle-dast.mjs --cible https://recette.exemple.tld \
@@ -252,8 +275,10 @@ Exit `0` = PASS, `1` = FAIL, `2` = SKIP. `oracle-sca` et `oracle-dast` ajoutent 
 (fichiers lus et jugés, jobs, étapes, constats par règle) et `sources[]` (`url`, `lu_le`), et
 chacun de ses constats porte `source`. `oracle-exposition-statique` ajoute `sondes` (en-têtes
 calculés par sonde), `synthese` et `sources[]`. Pour `oracle-dast` : `FAIL` couvre aussi
-le **refus du garde-fou** (rien n'a été émis) et `SKIP` les deux cas où rien n'a pu être jugé
-— aucune cible fournie, ou ZAP absent du poste.
+le **refus du garde-fou** (rien n'a été émis) et `SKIP` les cas où rien n'a pu être jugé
+— aucune cible fournie, ZAP absent du poste, ou ZAP d'une forme que le mode refuse
+(`DAST-ACTIF-IMPOSSIBLE`, `DAST-PASSIF-IMPOSSIBLE`). La `synthese.balayage` dit le mode joué, la
+forme du ZAP, le débit, les exclusions et le nom de l'en-tête d'accès (jamais sa valeur).
 
 ## Référentiel `referentiels/asvs-l1.md`
 
@@ -306,14 +331,28 @@ node oracles/self-test.mjs
 
 `oracle-exposition` (15 fixtures), `oracle-exposition-statique` (8 fixtures, 16 contrôles),
 `oracle-workflows` (15 fichiers de fixtures, 19 contrôles) et le volet garde-fou/rapport
-d'`oracle-dast` (13 cas) sont **entièrement déterministes** — zéro réseau, zéro dépendance de poste, et **aucun scan n'est
+d'`oracle-dast` (13 cas, plus 28 cas du mode actif et des options de balayage) sont **entièrement
+déterministes** — zéro réseau, zéro dépendance de poste, et **aucun scan n'est
 lancé par le self-test**, fût-il autorisé (les cas d'exécution forcent `WEBSEC_DAST_ZAP` sur un
-chemin injouable). Le volet `oracle-sca` dépend de l'outillage **réellement présent** sur
+chemin injouable, ou sur un ZAP simulé qui enregistre sa ligne de commande sans rien émettre). Le volet `oracle-sca` dépend de l'outillage **réellement présent** sur
 le poste qui exécute le self-test (npm, pip-audit ou à défaut uvx) et de l'accès réseau à leurs bases
 d'avisos ; en leur absence, le self-test consigne un **SKIP motivé** par cas, qui nomme la
 commande d'installation épinglée de `pip-audit` — jamais compté
 comme une preuve du sens rouge, jamais présenté comme un succès. Rejouer avant toute
 confiance dans une modification — un `✓` sans self-test rejoué n'est pas un `✓`.
+
+La preuve **avec le vrai ZAP** du mode actif est un banc à part, hors self-test :
+
+```
+node scripts/preuve-dast-actif.mjs [--oracle <oracle-dast.mjs>] [--debit 10] [--scenarios A,B,C]
+```
+
+Il exige Docker et l'image `ghcr.io/zaproxy/zaproxy:stable` déjà présentes (sinon `SKIP` motivé, exit 2),
+démarre `fixtures/dast/cible-locale.mjs` sur `127.0.0.1` et ne balaie rien d'autre. La preuve se lit au
+journal de la cible, pas au rapport de ZAP : A (passif) ne reçoit aucune sonde active, B (actif sans
+option) en reçoit et atteint la route que C (actif avec options) n'atteint jamais, avec l'en-tête sur
+toute requête privée et un pic de requêtes par seconde sous la borne. Compter plusieurs minutes par
+scénario (ZAP démarre et se met à jour avant de balayer).
 
 ## Limites explicites (ce que la v0 n'est pas)
 
@@ -326,11 +365,17 @@ confiance dans une modification — un `✓` sans self-test rejoué n'est pas un
   jeton anti-CSRF, en-tête CSP absent, anti-clickjacking absent). Le garde-fou a été rejoué
   dans le même souffle : la même autorisation refuse une cible hors périmètre, « rien n'a été
   émis vers la cible ».
-- **Ce qui reste non prouvé, et doit le rester tant que personne ne l'a exercé** : le mode
-  **actif** (`--mode actif`) — il exige `actif_autorise: true` au mandat et n'a jamais été
-  lancé ; l'installation NATIVE de ZAP sur ce poste (le JRE réclame une élévation, la voie
-  Docker a été retenue) ; et le comportement sur une application réelle, riche et
-  authentifiée — la cible de preuve était une page statique.
+- **Le mode actif a tourné le 12/11/2026 (TF-2444), sur une cible de fixture locale.**
+  `scripts/preuve-dast-actif.mjs` lance le vrai ZAP 2.17.0 (image Docker) contre
+  `fixtures/dast/cible-locale.mjs` et lit ce que la cible a reçu : le mode actif envoie des sondes
+  actives, le mode passif aucune ; l'exclusion, l'en-tête d'accès et le débit du mandat tiennent. Avant
+  la correction, le même balayage actif ne livrait que la passe passive (voir `CHANGELOG.md`).
+- **Ce qui reste non prouvé, et doit le rester tant que personne ne l'a exercé** : l'installation
+  NATIVE de ZAP sur ce poste (le JRE réclame une élévation, la voie Docker a été retenue) — les
+  formes `zap-baseline.py`, `zap-full-scan.py`, `zap.sh` et `zap.bat` ne sont prouvées que par un ZAP
+  simulé qui enregistre sa ligne de commande, et le balayage rapide de `zap.sh` n'a jamais été
+  lancé ; et le comportement sur une application réelle, riche et authentifiée — les cibles de preuve
+  sont une page statique (14/08/2026) et une cible de fixture de quatre routes (12/11/2026).
 - **Aucun scan sans autorisation écrite.** `oracle-dast` refuse (`FAIL`, exit 1) toute cible
   qui n'est pas nommément déclarée dans un fichier d'autorisation daté et en cours de validité
   — la production exige en plus une autorisation distincte, et le mode actif une mention
@@ -379,8 +424,9 @@ oracles/
   oracle-sca.mjs          enveloppe npm audit / pip-audit (ou uvx pip-audit ; uv.lock, poetry.lock) en verdict machine normalisé
   oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils
   oracle-workflows.mjs    juge les workflows GitHub Actions — 5 règles WF-1..WF-5, lecteur YAML natif
-  self-test.mjs           rejeu intégral à double sens (77 contrôles)
+  self-test.mjs           rejeu intégral à double sens (229 contrôles le 12/11/2026)
 scripts/
+  preuve-dast-actif.mjs   banc réel du mode actif d'oracle-dast : vrai ZAP (Docker) contre la cible locale de fixture, hors self-test
   capturer.mjs            capture réelle fetch(url) → JSON d'entrée d'oracle-exposition
   caviarder-cookies.mjs   retire la valeur d'un Set-Cookie, nom et attributs gardés (appelé par capturer.mjs)
   caviarder-jetons.mjs    retire les jetons de l'URL (imbriquée ou encodée comprise), de Location, Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate, Authorization et Cookie, tout en-tête dont le nom contient token, key, secret, auth, session ou password, et la valeur de tout paramètre d'une URL portée par un en-tête (appelé par capturer.mjs)
@@ -393,8 +439,10 @@ fixtures/
   exposition/             15 fixtures JSON (vertes + rouges) pour oracle-exposition
   exposition-statique/    8 fichiers _headers synthétiques : 1 vert, 7 rouges (EX par sonde, HD-1, HD-2)
   sca/                    manifestes npm/pip/uv/poetry synthétiques (vulnérables + propres) + cas SKIP, et outils/outil-simule.mjs (pip-audit et uvx simulés)
-  dast/                   autorisations synthétiques (valide/expirée/production/incomplète),
-                          rapports ZAP synthétiques (propre/vulnérable), seuils desserrés
+  dast/                   autorisations synthétiques (valide/expirée/production/incomplète, actif,
+                          actif avec options), rapports ZAP synthétiques (propre/vulnérable), seuils
+                          desserrés, zap-simule.mjs (ZAP simulé du self-test) et cible-locale.mjs
+                          (la cible de fixture du banc réel)
   workflows/              workflows synthétiques : 2 verts, 9 rouges (une par règle au moins),
                           1 mineur, un dépôt fictif avec verrou actions.lock
 ```

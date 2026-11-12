@@ -1,0 +1,13 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens VERT des options de balayage (TF-2444) : en-tête d'accès lu d'une variable d'environnement (le self-test l'assemble à l'exécution, aucune valeur dans ce fichier), débit de 5 requêtes par seconde, deux exclusions.",
+  "autorisation_ecrite": true,
+  "mandat": "TF-2444 — fixture de self-test, mandat fictif",
+  "proprietaire": "Exemple SAS (propriétaire fictif de exemple.tld, domaine réservé RFC 2606)",
+  "environnement": "recette",
+  "cibles": ["https://recette.exemple.tld"],
+  "fenetre": { "debut": "2026-01-01", "fin": "2099-12-31" },
+  "actif_autorise": true,
+  "en_tete_acces": { "nom": "Authorization", "valeur_env": "WEBSEC_DAST_TEST_ACCES" },
+  "debit_max_requetes_par_seconde": 5,
+  "exclusions": ["/deconnexion", "/admin/supprimer"]
+}

@@ -33,8 +33,19 @@
 //
 // Deux voies, une fois le garde-fou franchi :
 //   --rapport <f.json> : juge un rapport ZAP DÉJÀ produit (aucune émission vers la cible) ;
-//   sinon              : cherche ZAP sur le poste (WEBSEC_DAST_ZAP, puis zap-baseline.py /
-//                        zap.sh / zap.bat dans le PATH) et lance une passe BASELINE (passive).
+//   sinon              : cherche ZAP sur le poste et lance le balayage du MODE demandé :
+//     passif (défaut) → zap-baseline.py (araignée + règles passives, aucune attaque) ;
+//     actif           → zap-full-scan.py (araignée + attaque active des URL trouvées), ou
+//                       zap.sh / zap.bat (balayage rapide, qui attaque aussi) ; jamais baseline.
+//   Un mode ne se rabat JAMAIS sur l'autre : un ZAP qui ne sait que baseline ne rend pas un
+//   « actif » passif, un ZAP qui ne sait que le balayage rapide ne rend pas un « passif » qui
+//   attaque — SKIP motivé dans les deux cas (TF-2444 : le mode actif lançait la passe passive).
+// Options de balayage portées par le FICHIER d'autorisation (mêmes limites dans les deux modes) :
+//   `en_tete_acces` {nom, valeur | valeur_env} : en-tête ajouté à toute requête vers l'origine
+//                     autorisée (la valeur ne sort jamais dans le verdict) ;
+//   `debit_max_requetes_par_seconde` : un fil, un délai de ceil(1000/n) ms entre deux requêtes ;
+//   `exclusions` : chemins (« /deconnexion ») dont aucune requête ne part, préfixe compris.
+// Une option présente et mal formée est un refus (FAIL), jamais un balayage sans la limite.
 // ZAP absent du poste → verdict SKIP MOTIVÉ (exit 2), jamais un PASS de complaisance : c'est
 // le chemin nominal sur un poste non équipé, et il est prouvé par fixture au self-test.
 //
@@ -49,7 +60,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -62,7 +73,9 @@ const NON_JUGE = [
   "la fraîcheur des règles ZAP du poste (version des add-ons, base de règles) — non interrogée par cet oracle",
   "la couche TLS (versions, suites, chaîne de certificat) — hors périmètre, cf. README §Limites",
   "la correction des alertes signalées — un constat, jamais un geste automatique",
-  "l'exécution réelle de ZAP sur ce poste : la branche d'exécution n'est pas prouvée par fixture faute de ZAP installé (cf. README §Limites, D-W1 requalifiée)",
+  "l'exécution réelle sur une application riche et authentifiée : la preuve réelle (scripts/preuve-dast-actif.mjs) vise une cible de fixture locale de quelques routes, par l'image Docker de ZAP ; les formes natives (zap-baseline.py, zap-full-scan.py, zap.sh, zap.bat) ne sont prouvées que par un ZAP simulé qui enregistre sa ligne de commande (cf. README §Limites)",
+  "le débit tenu au millième près : la borne est un fil et un délai entre requêtes côté ZAP, pas un limiteur réseau ; une règle active qui émet plusieurs requêtes d'affilée reste soumise au même délai, mais le débit instantané n'est pas mesuré par cet oracle",
+  "la discrétion de l'en-tête d'accès : sa valeur ne sort jamais du verdict, mais elle figure dans la ligne de commande du processus ZAP (ou docker) le temps du balayage, lisible dans la liste des processus du poste",
 ];
 
 const args = process.argv.slice(2);
@@ -260,6 +273,75 @@ if (rapportPath) {
   jugerRapport(rapportPath, "rapport fourni (--rapport) — aucun scan lancé par cet oracle");
 }
 
+// ── Options de balayage de l'autorisation (TF-2444) ──────────────────────────
+// Lues APRÈS la voie rapport (rien n'est émis, donc rien à limiter) et AVANT toute émission : une
+// option présente et mal formée refuse le balayage, elle ne l'autorise pas sans sa limite. Aucun
+// message ne cite la valeur de l'en-tête.
+const invalides = [];
+let enTeteAcces = null;
+let debit = null;
+let exclusions = [];
+if (autz.en_tete_acces !== undefined) {
+  const ea = autz.en_tete_acces;
+  const nom = ea && typeof ea === "object" ? ea.nom : undefined;
+  if (typeof nom !== "string" || !/^[A-Za-z0-9-]+$/.test(nom)) {
+    invalides.push("en_tete_acces.nom (nom d'en-tête HTTP attendu : lettres, chiffres et tirets)");
+  } else {
+    const aValeur = typeof ea.valeur === "string" && ea.valeur !== "";
+    const aEnv = typeof ea.valeur_env === "string" && ea.valeur_env !== "";
+    if (aValeur === aEnv) {
+      invalides.push("en_tete_acces (exactement un de `valeur` ou `valeur_env` est attendu)");
+    } else {
+      const valeur = aValeur ? ea.valeur : process.env[ea.valeur_env];
+      if (!valeur) invalides.push(`en_tete_acces.valeur_env (variable « ${ea.valeur_env} » absente ou vide : un balayage authentifié ne part pas sans son en-tête)`);
+      else if (/[\x00-\x1f\x7f]/.test(valeur)) invalides.push("en_tete_acces (la valeur porte un caractère de contrôle)");
+      else enTeteAcces = { nom, valeur, source: aValeur ? "fichier d'autorisation" : `variable ${ea.valeur_env}` };
+    }
+  }
+}
+if (autz.debit_max_requetes_par_seconde !== undefined) {
+  const d = autz.debit_max_requetes_par_seconde;
+  if (typeof d !== "number" || !Number.isFinite(d) || d <= 0 || d > 1000) invalides.push("debit_max_requetes_par_seconde (nombre supérieur à 0 et au plus 1000)");
+  else debit = { max_requetes_par_seconde: d, delai_ms: Math.ceil(1000 / d) };
+}
+if (autz.exclusions !== undefined) {
+  if (!Array.isArray(autz.exclusions) || autz.exclusions.some((e) => typeof e !== "string" || !e.startsWith("/") || /\s/.test(e))) {
+    invalides.push("exclusions (liste de chemins commençant par « / », sans espace)");
+  } else exclusions = autz.exclusions;
+}
+if (invalides.length) {
+  add("bloquant", "DAST-AUTZ-CHAMPS", `option(s) de balayage invalide(s) : ${invalides.join(" ; ")}. Refus net — un balayage ne part jamais sans une limite que le mandat avait posée.`, autorisationPath);
+  sortir("FAIL", 1);
+}
+synthese.balayage = {
+  scan: mode,
+  en_tete_acces: enTeteAcces ? { nom: enTeteAcces.nom, valeur: "(masquée)", source: enTeteAcces.source } : null,
+  debit, exclusions,
+};
+
+// Options passées à ZAP en paires clé=valeur (`-config clé=valeur`), les mêmes pour les trois formes.
+const echapperRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function optionsZap() {
+  const o = [];
+  if (enTeteAcces) {
+    const r = "replacer.full_list(0).";
+    o.push(`${r}description=websec acces ${enTeteAcces.nom}`, `${r}enabled=true`, `${r}matchtype=REQ_HEADER`,
+      `${r}matchstr=${enTeteAcces.nom}`, `${r}regex=false`, `${r}replacement=${enTeteAcces.valeur}`,
+      `${r}url=^${echapperRegex(origineCible)}(/.*)?$`);
+  }
+  if (debit) {
+    o.push("scanner.threadPerHost=1", `scanner.delayInMs=${debit.delai_ms}`, "spider.thread=1", `spider.requestwait=${debit.delai_ms}`);
+  }
+  exclusions.forEach((chemin, i) => {
+    const g = `globalexcludeurl.url_list.url(${i}).`;
+    o.push(`${g}description=websec exclusion ${chemin}`, `${g}enabled=true`, `${g}regex=^${echapperRegex(origineCible)}${echapperRegex(chemin)}.*`);
+  });
+  return o;
+}
+const optionsZapListe = optionsZap();
+// La ligne de commande peut porter la valeur de l'en-tête : tout texte repris de ZAP la masque.
+const masquer = (t) => (enTeteAcces ? String(t).split(enTeteAcces.valeur).join("(masquée)") : String(t));
+
 // Voie B — exécution ZAP sur le poste.
 // La détection RÉSOUT la commande dans le PATH, elle ne l'exécute jamais « pour voir » : sur
 // Windows, une commande inexistante sort en 1 avec un message sur stderr, indiscernable d'un
@@ -287,12 +369,24 @@ function imageDockerPresente(image) {
   return r.error === undefined && r.status === 0;
 }
 
+// La FORME d'un ZAP se lit du nom de sa commande : baseline (passif), complet (araignée + attaque
+// active), rapide (zap.sh / zap.bat, dont l'option `-quickurl` « attaque » l'URL, selon l'aide de
+// ZAP 2.17.0). Un script au nom inconnu (.py, .mjs) est lu comme baseline en passif, et jamais admis
+// en actif : l'oracle ne peut pas savoir qu'il attaque.
+function formeDe(cmd) {
+  const base = path.basename(cmd).toLowerCase().replace(/\.(py|mjs|sh|bat|cmd|exe)$/, "");
+  if (base === "zap-baseline") return "baseline";
+  if (base === "zap-full-scan") return "complet";
+  if (base === "zap") return "rapide";
+  return /\.(py|mjs)$/i.test(cmd) ? "script-inconnu" : "rapide";
+}
+
 function resoudreZap() {
   const force = process.env.WEBSEC_DAST_ZAP;
-  const candidats = force ? [force] : ["zap-baseline.py", "zap.sh", "zap.bat"];
+  const candidats = force ? [force] : (mode === "actif" ? ["zap-full-scan.py", "zap.sh", "zap.bat"] : ["zap-baseline.py"]);
   for (const cmd of candidats) {
     try {
-      if (resoluDansLePath(cmd)) return { mode: "poste", cmd };
+      if (resoluDansLePath(cmd)) return { mode: "poste", cmd, forme: formeDe(cmd) };
     } catch { /* candidat suivant */ }
   }
   // `WEBSEC_DAST_ZAP` déclaré et injouable = un CHOIX de l'opérateur, pas une absence : on ne
@@ -302,7 +396,7 @@ function resoudreZap() {
   // de vrai. Garde posée le 14/08 en ajoutant la voie Docker.
   if (force) return null;
   const image = process.env.WEBSEC_DAST_IMAGE || IMAGE_DEFAUT;
-  if (imageDockerPresente(image)) return { mode: "docker", cmd: "docker", image };
+  if (imageDockerPresente(image)) return { mode: "docker", cmd: "docker", image, forme: mode === "actif" ? "complet" : "baseline" };
   return null;
 }
 
@@ -310,35 +404,64 @@ const zap = resoudreZap();
 if (!zap) {
   const ou = process.env.WEBSEC_DAST_ZAP
     ? `commande déclarée dans WEBSEC_DAST_ZAP (« ${process.env.WEBSEC_DAST_ZAP} ») injouable`
-    : "aucun de zap-baseline.py / zap.sh / zap.bat dans le PATH, et aucune image Docker ZAP présente";
+    : (mode === "actif"
+      ? "aucun de zap-full-scan.py / zap.sh / zap.bat dans le PATH, et aucune image Docker ZAP présente"
+      : "zap-baseline.py absent du PATH, et aucune image Docker ZAP présente");
   add("info", "DAST-SKIP", `ZAP absent de ce poste — ${ou}. Aucun scan lancé, aucun verdict rendu : SKIP motivé, jamais un PASS par défaut. Cet oracle n'installe jamais ZAP ; installer ZAP (ou « docker pull ${IMAGE_DEFAUT} ») puis relancer, ou juger un rapport déjà produit avec --rapport <fichier.json>.`, origineCible);
+  if (mode === "passif" && !process.env.WEBSEC_DAST_ZAP && (resoluDansLePath("zap.sh") || resoluDansLePath("zap.bat"))) {
+    add("info", "DAST-PASSIF-IMPOSSIBLE", "zap.sh / zap.bat est présent, mais son balayage rapide (-quickurl) ATTAQUE la cible : il n'est pas admis en mode passif. Une passe passive exige zap-baseline.py ou l'image Docker ; l'attaque exige `--mode actif` et `actif_autorise: true`.", origineCible);
+  }
   synthese.zap = { provenance: "aucune — ZAP introuvable sur le poste", rapport: null };
   sortir("SKIP", 2);
 }
 
-// ZAP présent : passe baseline (PASSIVE) contre la cible AUTORISÉE, rapport JSON en sortie.
+// Un mode ne se rabat jamais sur l'autre (TF-2444) : la forme du ZAP trouvé doit faire ce que le
+// mode annonce, sinon rien n'est lancé.
+if (mode === "actif" && zap.forme !== "complet" && zap.forme !== "rapide") {
+  add("info", "DAST-ACTIF-IMPOSSIBLE", `mode actif demandé, mais « ${zap.cmd} » est un ZAP de forme « ${zap.forme} », qui ne lance pas d'attaque active : il en rendrait une passe passive sous le nom d'un balayage actif. Aucun scan lancé. Désigner zap-full-scan.py (WEBSEC_DAST_ZAP, ou le PATH) ou l'image Docker, ou demander le mode passif.`, origineCible);
+  synthese.zap = { provenance: `aucune — forme « ${zap.forme} » incompatible avec le mode actif`, rapport: null };
+  sortir("SKIP", 2);
+}
+if (mode === "passif" && zap.forme !== "baseline" && zap.forme !== "script-inconnu") {
+  add("info", "DAST-PASSIF-IMPOSSIBLE", `mode passif demandé, mais « ${zap.cmd} » est un ZAP de forme « ${zap.forme} », qui attaque la cible : il n'est pas admis en passif. Aucun scan lancé. Désigner zap-baseline.py (WEBSEC_DAST_ZAP, ou le PATH) ou l'image Docker, ou demander le mode actif avec \`actif_autorise: true\`.`, origineCible);
+  synthese.zap = { provenance: `aucune — forme « ${zap.forme} » incompatible avec le mode passif`, rapport: null };
+  sortir("SKIP", 2);
+}
+
+// ZAP présent, de la bonne forme : balayage du MODE demandé contre la cible AUTORISÉE, rapport JSON en sortie.
 const horodatage = Date.now();
 const dossierTravail = fs.mkdtempSync(path.join(os.tmpdir(), `zap-${horodatage}-`));
 const nomRapport = "zap-rapport.json";
 const sortieRapport = path.join(dossierTravail, nomRapport);
 
+// Les options (en-tête, débit, exclusions) passent en `-z "-config k=v …"` aux scripts Python de ZAP
+// (découpés par shlex : chaque paire est citée entre apostrophes), en `-config k=v` à zap.sh.
+const citer = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+const optionsScript = optionsZapListe.length ? ["-z", optionsZapListe.map((o) => `-config ${citer(o)}`).join(" ")] : [];
+const scriptDocker = mode === "actif" ? "zap-full-scan.py" : "zap-baseline.py";
+
+let commande = zap.cmd;
 let argv;
 if (zap.mode === "docker") {
-  // `zap-baseline.py` écrit ses rapports dans /zap/wrk : on y monte un dossier de travail
+  // Les scripts écrivent leurs rapports dans /zap/wrk : on y monte un dossier de travail
   // du poste, et le rapport en ressort par le montage. `--rm` : aucun conteneur ne survit.
   argv = [
     "run", "--rm", "-v", `${dossierTravail}:/zap/wrk:rw`, zap.image,
-    "zap-baseline.py", "-t", cible, "-J", nomRapport, "-I",
+    scriptDocker, "-t", cible, "-J", nomRapport, "-I", ...optionsScript,
   ];
+} else if (zap.forme === "rapide") {
+  argv = ["-cmd", ...optionsZapListe.flatMap((o) => ["-config", o]), "-quickurl", cible, "-quickout", sortieRapport];
 } else {
-  argv = zap.cmd.endsWith(".py")
-    ? ["-t", cible, "-J", sortieRapport, "-I"]
-    : ["-cmd", "-quickurl", cible, "-quickout", sortieRapport];
+  argv = ["-t", cible, "-J", sortieRapport, "-I", ...optionsScript];
 }
-const commandeLisible = zap.mode === "docker" ? `docker run ${zap.image} zap-baseline.py` : zap.cmd;
-const r = spawnSync(zap.cmd, argv, { encoding: "utf8", timeout: 1800000, shell: false });
+// Un script .mjs (ZAP simulé du banc) est joué par node, comme les outils simulés d'oracle-sca.
+if (/\.mjs$/i.test(zap.cmd)) { argv = [zap.cmd, ...argv]; commande = process.execPath; }
+const commandeLisible = zap.mode === "docker" ? `docker run ${zap.image} ${scriptDocker}` : zap.cmd;
+synthese.balayage.forme = zap.forme;
+synthese.balayage.commande = commandeLisible;
+const r = spawnSync(commande, argv, { encoding: "utf8", timeout: 1800000, shell: false });
 if (!fs.existsSync(sortieRapport)) {
-  const extrait = String(r.stderr || r.stdout || "").slice(0, 300).trim();
+  const extrait = masquer(String(r.stderr || r.stdout || "")).slice(0, 300).trim();
   add("info", "DAST-SKIP", `ZAP (« ${commandeLisible} ») lancé mais aucun rapport exploitable produit : ${extrait || "sortie vide"}. SKIP motivé — jamais un PASS faute de preuve.`, origineCible);
   synthese.zap = { provenance: `exécution ${commandeLisible} en échec`, rapport: null };
   sortir("SKIP", 2);

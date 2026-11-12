@@ -324,6 +324,137 @@ function runDast(args, env) {
   ok(r.verdict === "FAIL" && aRegle(r, "DAST-RAPPORT"), `--rapport pointant un JSON qui n'est pas un rapport ZAP → FAIL, jamais un PASS silencieux (obtenu ${r.verdict})`);
 }
 
+// ── TF-2444 · mode actif réel et options de balayage portées par l'autorisation ─────────────────
+// Un ZAP SIMULÉ (fixtures/dast/zap-simule.mjs, copié sous les noms des vraies commandes) enregistre la
+// ligne de commande qu'oracle-dast lui passe, sans rien émettre vers aucune cible. Chaque cas force
+// WEBSEC_DAST_ZAP sur ce ZAP simulé : aucun ne peut atteindre le vrai ZAP ni Docker. La preuve avec le vrai
+// ZAP, contre une cible de fixture locale, est scripts/preuve-dast-actif.mjs (hors self-test).
+{
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), "websec-dast-"));
+  const simule = (nom) => { const f = path.join(dossier, `${nom}.mjs`); fs.copyFileSync(AUTZ("zap-simule.mjs"), f); return f; };
+  const ZAP = { baseline: simule("zap-baseline"), complet: simule("zap-full-scan"), rapide: simule("zap"), inconnu: simule("zap-mystere") };
+  const trace = path.join(dossier, "trace.jsonl");
+  // Valeur d'en-tête fictive assemblée à l'exécution (espace et apostrophe : elle éprouve la citation).
+  const ACCES = ["Bearer", ["fixture", "non", "secret"].join("-")].join(" ") + " a'b";
+  const lancer = (zap, autz, mode, env) => {
+    fs.rmSync(trace, { force: true });
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", autz, "--mode", mode], {
+      WEBSEC_DAST_ZAP: zap, WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-propre.json"),
+      WEBSEC_DAST_TEST_ACCES: ACCES, ...(env || {}),
+    });
+    const lignes = fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+    return { r, lignes };
+  };
+  const optionsZ = (lignes) => { const a = (lignes[0] && lignes[0].argv) || []; const i = a.indexOf("-z"); return i >= 0 ? a[i + 1] : ""; };
+  const msgs = (r) => (r.findings || []).map((f) => f.msg).join(" ");
+
+  // sens VERT : chaque mode lance SA passe, une seule fois
+  {
+    const { r, lignes } = lancer(ZAP.baseline, AUTZ("autorisation-valide.json"), "passif");
+    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === "zap-baseline.mjs" && r.synthese.balayage.scan === "passif" && !lignes[0].argv.includes("-z"),
+      `mode passif → la passe baseline, une fois, sans option (obtenu ${r.verdict}, ${lignes.map((l) => l.script).join(",")})`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.complet, AUTZ("autorisation-actif.json"), "actif");
+    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === "zap-full-scan.mjs" && r.synthese.balayage.scan === "actif" && r.synthese.balayage.forme === "complet" && lignes[0].argv.includes("-t") && !lignes[0].argv.includes("-z"),
+      `mode actif autorisé → le balayage complet (zap-full-scan), une fois, jamais baseline (obtenu ${r.verdict}, ${lignes.map((l) => l.script).join(",")})`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.rapide, AUTZ("autorisation-actif.json"), "actif");
+    const a = (lignes[0] && lignes[0].argv) || [];
+    ok(r.verdict === "PASS" && lignes.length === 1 && a.includes("-quickurl") && a[a.indexOf("-quickurl") + 1] === CIBLE_OK,
+      `mode actif avec un ZAP natif de forme rapide (zap.sh) → son balayage rapide, qui attaque (obtenu ${r.verdict})`);
+  }
+  // sens ROUGE : un mode ne se rabat jamais sur l'autre, et rien n'est lancé
+  {
+    const { r, lignes } = lancer(ZAP.baseline, AUTZ("autorisation-actif.json"), "actif");
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-ACTIF-IMPOSSIBLE") && lignes.length === 0, `mode actif avec un ZAP baseline seul → SKIP DAST-ACTIF-IMPOSSIBLE, aucune passe passive sous le nom d'actif (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.inconnu, AUTZ("autorisation-actif.json"), "actif");
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-ACTIF-IMPOSSIBLE") && lignes.length === 0, `mode actif avec un script de nom inconnu → SKIP DAST-ACTIF-IMPOSSIBLE, l'oracle ne sait pas qu'il attaque (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.complet, AUTZ("autorisation-valide.json"), "passif");
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-PASSIF-IMPOSSIBLE") && lignes.length === 0, `mode passif avec un ZAP de balayage complet → SKIP DAST-PASSIF-IMPOSSIBLE, aucune attaque sous le nom de passif (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.rapide, AUTZ("autorisation-valide.json"), "passif");
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-PASSIF-IMPOSSIBLE") && lignes.length === 0, `mode passif avec zap.sh (balayage rapide, qui attaque) → SKIP DAST-PASSIF-IMPOSSIBLE (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.complet, AUTZ("autorisation-valide.json"), "actif");
+    ok(r.verdict === "FAIL" && aRegle(r, "DAST-AUTZ-MODE") && lignes.length === 0, `mode actif sans actif_autorise, même avec le bon ZAP → FAIL DAST-AUTZ-MODE, aucun lancement (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+
+  // options : en-tête d'accès, débit, exclusions — sens VERT
+  const dedans = (z, morceau) => z.includes(morceau);
+  {
+    const { r, lignes } = lancer(ZAP.complet, AUTZ("autorisation-actif-options.json"), "actif");
+    const z = optionsZ(lignes);
+    ok(r.verdict === "PASS" && dedans(z, "replacer.full_list(0).matchtype=REQ_HEADER") && dedans(z, "replacer.full_list(0).matchstr=Authorization")
+      && dedans(z, `'replacer.full_list(0).replacement=${ACCES.replace(/'/g, "'\\''")}'`) && dedans(z, "replacer.full_list(0).url=^https://recette\\.exemple\\.tld(/.*)?$"),
+      `en_tete_acces (valeur_env) → règle de remplacement d'en-tête bornée à l'origine autorisée, valeur citée pour shlex (obtenu ${r.verdict})`);
+    ok(dedans(z, "scanner.threadPerHost=1") && dedans(z, "scanner.delayInMs=200") && dedans(z, "spider.thread=1") && dedans(z, "spider.requestwait=200"),
+      "debit_max_requetes_par_seconde: 5 → un fil et 200 ms entre deux requêtes, pour l'araignée comme pour l'attaque");
+    ok(dedans(z, "globalexcludeurl.url_list.url(0).regex=^https://recette\\.exemple\\.tld/deconnexion.*") && dedans(z, "globalexcludeurl.url_list.url(1).regex=^https://recette\\.exemple\\.tld/admin/supprimer.*"),
+      "exclusions → une exclusion globale par chemin, ancrée sur l'origine autorisée");
+    const sortie = JSON.stringify(r);
+    ok(!sortie.includes(ACCES) && !sortie.includes("fixture-non-secret") && r.synthese.balayage.en_tete_acces.nom === "Authorization" && r.synthese.balayage.en_tete_acces.valeur === "(masquée)",
+      "la valeur de l'en-tête n'apparaît nulle part dans le verdict : son nom et « (masquée) » seulement");
+  }
+  {
+    const f = path.join(dossier, "autorisation-valeur.json");
+    const base = JSON.parse(fs.readFileSync(AUTZ("autorisation-actif-options.json"), "utf8"));
+    fs.writeFileSync(f, JSON.stringify({ ...base, en_tete_acces: { nom: "X-Acces", valeur: ACCES } }));
+    const { r, lignes } = lancer(ZAP.complet, f, "actif", { WEBSEC_DAST_TEST_ACCES: "" });
+    ok(r.verdict === "PASS" && dedans(optionsZ(lignes), "replacer.full_list(0).matchstr=X-Acces") && !JSON.stringify(r).includes("fixture-non-secret"),
+      `en_tete_acces avec « valeur » littérale → appliqué, jamais repris dans le verdict (obtenu ${r.verdict})`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.baseline, AUTZ("autorisation-actif-options.json"), "passif");
+    const z = optionsZ(lignes);
+    ok(r.verdict === "PASS" && lignes[0].script === "zap-baseline.mjs" && dedans(z, "globalexcludeurl.url_list.url(0).regex=") && dedans(z, "scanner.delayInMs=200") && dedans(z, "replacer.full_list(0).matchstr=Authorization"),
+      `les options valent aussi en passif : la passe baseline reçoit exclusions, débit et en-tête (obtenu ${r.verdict})`);
+  }
+
+  // options mal formées — sens ROUGE : FAIL DAST-AUTZ-CHAMPS qui nomme le champ, rien n'est lancé
+  const valide = JSON.parse(fs.readFileSync(AUTZ("autorisation-actif-options.json"), "utf8"));
+  const rouges = [
+    ["débit à 0", { debit_max_requetes_par_seconde: 0 }, "debit_max_requetes_par_seconde"],
+    ["débit négatif", { debit_max_requetes_par_seconde: -3 }, "debit_max_requetes_par_seconde"],
+    ["débit en texte", { debit_max_requetes_par_seconde: "5" }, "debit_max_requetes_par_seconde"],
+    ["débit au-delà de 1000", { debit_max_requetes_par_seconde: 5000 }, "debit_max_requetes_par_seconde"],
+    ["exclusion sans « / » initial", { exclusions: ["deconnexion"] }, "exclusions"],
+    ["exclusion avec espace", { exclusions: ["/a b"] }, "exclusions"],
+    ["exclusions qui n'est pas une liste", { exclusions: "/deconnexion" }, "exclusions"],
+    ["nom d'en-tête avec espace", { en_tete_acces: { nom: "X Mauvais", valeur_env: "WEBSEC_DAST_TEST_ACCES" } }, "en_tete_acces.nom"],
+    ["en-tête sans nom", { en_tete_acces: { valeur_env: "WEBSEC_DAST_TEST_ACCES" } }, "en_tete_acces.nom"],
+    ["en-tête avec valeur ET valeur_env", { en_tete_acces: { nom: "Authorization", valeur: "x", valeur_env: "WEBSEC_DAST_TEST_ACCES" } }, "exactement un"],
+    ["en-tête sans valeur", { en_tete_acces: { nom: "Authorization" } }, "exactement un"],
+    ["valeur d'en-tête avec saut de ligne", { en_tete_acces: { nom: "Authorization", valeur: "a\nb" } }, "caractère de contrôle"],
+  ];
+  for (const [libelle, variante, motif] of rouges) {
+    const f = path.join(dossier, "autorisation-rouge.json");
+    fs.writeFileSync(f, JSON.stringify({ ...valide, ...variante }));
+    const { r, lignes } = lancer(ZAP.complet, f, "actif");
+    ok(r.verdict === "FAIL" && aRegle(r, "DAST-AUTZ-CHAMPS") && msgs(r).includes(motif) && lignes.length === 0,
+      `${libelle} → FAIL DAST-AUTZ-CHAMPS qui cite « ${motif} », rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.complet, AUTZ("autorisation-actif-options.json"), "actif", { WEBSEC_DAST_TEST_ACCES: "" });
+    ok(r.verdict === "FAIL" && aRegle(r, "DAST-AUTZ-CHAMPS") && msgs(r).includes("WEBSEC_DAST_TEST_ACCES") && lignes.length === 0,
+      `en-tête annoncé mais variable absente → FAIL, jamais un balayage sans son en-tête (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    const f = path.join(dossier, "autorisation-debit-0.json");
+    fs.writeFileSync(f, JSON.stringify({ ...valide, debit_max_requetes_par_seconde: 0 }));
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", f, "--rapport", AUTZ("rapport-zap-propre.json")]);
+    ok(r.verdict === "PASS", `voie --rapport : rien n'est émis, les options de balayage ne sont pas lues (obtenu ${r.verdict})`);
+  }
+  fs.rmSync(dossier, { recursive: true, force: true });
+}
+
 // ── TF-2001 · oracle-workflows : durcissement des workflows GitHub Actions, WF-1..WF-5 ────────
 // Déterministe : lecture de fichiers YAML synthétiques, aucun réseau, rien d'exécuté. Chaque rouge
 // doit lever SA règle et aucune autre règle dure, pour prouver qu'elle échoue pour la bonne raison.

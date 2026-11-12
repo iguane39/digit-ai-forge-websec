@@ -1,0 +1,10 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens VERT du mode actif : autorisation complète avec actif_autorise: true, sans option de balayage (TF-2444).",
+  "autorisation_ecrite": true,
+  "mandat": "TF-2444 — fixture de self-test, mandat fictif",
+  "proprietaire": "Exemple SAS (propriétaire fictif de exemple.tld, domaine réservé RFC 2606)",
+  "environnement": "recette",
+  "cibles": ["https://recette.exemple.tld"],
+  "fenetre": { "debut": "2026-01-01", "fin": "2099-12-31" },
+  "actif_autorise": true
+}
