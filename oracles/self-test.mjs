@@ -32,8 +32,10 @@ let pass = 0, echec = 0, note = 0;
 const ok = (b, m) => { console.log(`  [${b ? "PASS" : "FAIL"}] ${m}`); b ? pass++ : echec++; };
 const skipNote = (m) => { console.log(`  [SKIP] ${m}`); note++; };
 
-function runJson(script, args, env) {
-  try { return JSON.parse(execFileSync(process.execPath, [script, ...args, "--json-only"], { encoding: "utf8", timeout: 120000, ...(env ? { env: { ...process.env, ...env } } : {}) })); }
+// `delai` : l'oracle-sca laisse 240 s à uvx (résolution de django 1.4 dans un environnement isolé, 159 s mesurées le
+// 12/11/2026) ; le banc doit attendre plus longtemps que l'oracle, sinon un audit réussi est lu comme ILLISIBLE (TF-2398).
+function runJson(script, args, env, delai = 120000) {
+  try { return JSON.parse(execFileSync(process.execPath, [script, ...args, "--json-only"], { encoding: "utf8", timeout: delai, ...(env ? { env: { ...process.env, ...env } } : {}) })); }
   catch (e) { try { return JSON.parse(String(e.stdout)); } catch { return { verdict: "ILLISIBLE", findings: [], _stderr: String(e.stderr || e) }; } }
 }
 function aRegle(res, regle) { return (res.findings || []).some((f) => f.regle === regle); }
@@ -78,7 +80,16 @@ console.log("\nSELF-TEST forge-websec — oracle-sca (dépend de l'outillage ré
 
 const npmDispo = (() => { try { return spawnSync("npm", ["--version"], { encoding: "utf8", shell: process.platform === "win32" }).status === 0; } catch { return false; } })();
 const pipDispo = (() => { try { return spawnSync("pip-audit", ["--version"], { encoding: "utf8", shell: process.platform === "win32" }).status === 0; } catch { return false; } })();
-console.log(`  outillage détecté : npm=${npmDispo ? "présent" : "absent"} pip-audit=${pipDispo ? "présent" : "absent"}`);
+// uvx lance pip-audit sans installation globale : l'oracle l'utilise quand pip-audit est absent (TF-2272),
+// donc le banc le compte comme une voie pip du poste (TF-2398) au lieu de passer le sens rouge en SKIP.
+const uvxDispo = (() => { try { return spawnSync("uvx", ["--version"], { encoding: "utf8", shell: process.platform === "win32" }).status === 0; } catch { return false; } })();
+const pipVoie = pipDispo ? "pip-audit" : (uvxDispo ? "uvx pip-audit" : null);
+// Le remède que l'oracle lui-même rend quand ni pip-audit ni uvx ne sont là : une seule source, la commande épinglée.
+const remedePipAbsent = () => {
+  const r = runJson(ORACLE_SCA, [FX("sca", "pip-clean")], { WEBSEC_SCA_PIP_AUDIT: path.join(os.tmpdir(), "websec-outil-absent"), WEBSEC_SCA_UVX: path.join(os.tmpdir(), "websec-outil-absent") });
+  return ((r.manques || [])[0] || {}).remede || "remède non lu";
+};
+console.log(`  outillage détecté : npm=${npmDispo ? "présent" : "absent"} pip-audit=${pipDispo ? "présent" : "absent"} uvx=${uvxDispo ? "présent" : "absent"}`);
 
 // ── npm : sens rouge (lodash 4.17.15, CVE connues) ───────────────────────────
 if (!npmDispo) {
@@ -98,19 +109,19 @@ if (!npmDispo) {
 }
 
 // ── pip : sens rouge (django 1.4, CVE connues nombreuses) ────────────────────
-if (!pipDispo) {
-  skipNote("pip-audit absent du poste — sens rouge SCA-PIP non démontrable");
+if (!pipVoie) {
+  skipNote(`ni pip-audit ni uvx sur le poste — sens rouge SCA-PIP non démontrable ; pour le jouer : ${remedePipAbsent()}`);
 } else {
-  const r = runJson(ORACLE_SCA, [FX("sca", "pip-vulnerable")]);
-  if (r.verdict === "SKIP") skipNote(`pip-audit présent mais audit indisponible (base d'avisos injoignable) — sens rouge SCA-PIP non démontré cette exécution : ${JSON.stringify(r.findings)}`);
+  const r = runJson(ORACLE_SCA, [FX("sca", "pip-vulnerable")], undefined, 300000);
+  if (r.verdict === "SKIP") skipNote(`${pipVoie} présent mais audit indisponible (base d'avisos injoignable) — sens rouge SCA-PIP non démontré cette exécution : ${JSON.stringify(r.findings)}`);
   else ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP"), `pip-vulnerable (django 1.4) → FAIL avec SCA-PIP (obtenu ${r.verdict})`);
 }
 // ── pip : sens vert (aucune dépendance) ──────────────────────────────────────
-if (!pipDispo) {
-  skipNote("pip-audit absent du poste — sens vert SCA-PIP non démontrable");
+if (!pipVoie) {
+  skipNote(`ni pip-audit ni uvx sur le poste — sens vert SCA-PIP non démontrable ; pour le jouer : ${remedePipAbsent()}`);
 } else {
-  const r = runJson(ORACLE_SCA, [FX("sca", "pip-clean")]);
-  if (r.verdict === "SKIP") skipNote(`pip-audit présent mais audit indisponible — sens vert SCA-PIP non démontré cette exécution : ${JSON.stringify(r.findings)}`);
+  const r = runJson(ORACLE_SCA, [FX("sca", "pip-clean")], undefined, 300000);
+  if (r.verdict === "SKIP") skipNote(`${pipVoie} présent mais audit indisponible — sens vert SCA-PIP non démontré cette exécution : ${JSON.stringify(r.findings)}`);
   else ok(r.verdict === "PASS", `pip-clean (aucune dépendance) → PASS (obtenu ${r.verdict})`);
 }
 
@@ -194,6 +205,15 @@ if (!pipDispo) {
   ok(typeof r.motif === "string" && /AUDIT NON JOUÉ/.test(r.motif) && /pas un PASS/.test(r.motif) && /uv\.lock/.test(r.motif),
     `le SKIP porte un motif en une phrase qui dit « audit non joué » et nomme le manque (obtenu « ${r.motif} »)`);
 
+  // TF-2398 : le remède d'un SKIP « outil absent » est une commande, épinglée à une version : un
+  // « installer pip-audit » nu laisse l'humain deviner la commande et la version à poser.
+  for (const cas of ["pip-clean", "uv-propre", "poetry-propre"]) {
+    r = runJson(ORACLE_SCA, [FX("sca", cas)], rien);
+    const remede = ((r.manques || [])[0] || {}).remede || "";
+    ok(r.verdict === "SKIP" && /pip install pip-audit==\d+\.\d+\.\d+/.test(remede) && /uv tool install pip-audit==\d+\.\d+\.\d+/.test(remede) && /uvx/.test(remede),
+      `${cas} sans pip-audit ni uvx → le remède du SKIP nomme les commandes d'installation épinglées (pip, uv) et la voie uvx (obtenu ${r.verdict}, « ${remede} »)`);
+  }
+
   r = runJson(ORACLE_SCA, [FX("sca", "uv-propre")], { ...direct, WEBSEC_SIM_ECHEC: "1" });
   ok(r.verdict === "SKIP" && /indisponible/.test(causes(r)) && /base d'avisos injoignable/.test(causes(r)),
     `outil présent mais audit en échec → SKIP dont le manque cite la cause lue de l'outil (obtenu ${r.verdict}, « ${causes(r)} »)`);
@@ -211,9 +231,8 @@ if (!pipDispo) {
 
 // ── verrous avec l'outil RÉEL du poste (pip-audit, sinon uvx) et le réseau ───────
 {
-  const uvxDispo = (() => { try { return spawnSync("uvx", ["--version"], { encoding: "utf8" }).status === 0; } catch { return false; } })();
-  if (!pipDispo && !uvxDispo) {
-    skipNote("ni pip-audit ni uvx sur le poste — sens rouge SCA-PIP sur uv.lock / poetry.lock non démontré avec l'outil réel");
+  if (!pipVoie) {
+    skipNote(`ni pip-audit ni uvx sur le poste — sens rouge SCA-PIP sur uv.lock / poetry.lock non démontré avec l'outil réel ; pour le jouer : ${remedePipAbsent()}`);
   } else {
     for (const cas of ["uv-vulnerable", "poetry-vulnerable"]) {
       const r = runJson(ORACLE_SCA, [FX("sca", cas)]);

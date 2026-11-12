@@ -36,8 +36,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const ORACLE = "oracle-sca";
+// Version de pip-audit nommée dans le remède d'un SKIP « outil absent » (TF-2398) : celle mesurée
+// sur le poste le 12/11/2026 (`pip-audit --version` → 2.10.1). Le remède donne une commande, pas un vœu.
+const PIP_AUDIT_EPINGLE = "pip-audit==2.10.1";
 const NON_JUGE = [
   "l'exhaustivité de la base d'avisos consultée (npm advisory database / OSV/PyPA) — dépend de l'outil et de sa fraîcheur au moment du run",
   "osv-scanner (multi-écosystème) — non enveloppé en v0, faute de poste équipé pour le prouver par fixture (cf. README §Limites)",
@@ -234,7 +237,7 @@ for (const s of sourcesPip) {
   const base = path.basename(s.fichier);
   const voie = voiePip();
   if (!voie) {
-    manque("pip", s.fichier, `${base} présent mais ni pip-audit ni uvx sur le poste — écosystème pip non audité`, "installer pip-audit ou uv (geste humain, l'oracle n'installe rien)");
+    manque("pip", s.fichier, `${base} présent mais ni pip-audit ni uvx sur le poste — écosystème pip non audité`, `installer l'outil épinglé, par « pip install ${PIP_AUDIT_EPINGLE} » ou « uv tool install ${PIP_AUDIT_EPINGLE} » ; ou installer uv, qui fournit uvx (« uvx pip-audit » est alors lancé sans installation globale) — geste humain, l'oracle n'installe rien`);
     continue;
   }
   let lots; // fichiers requirements à auditer : [chemin]

@@ -157,7 +157,9 @@ résolution) sont auditées en deux lots, `pip-audit` refusant le doublon dans u
 
 Quand `pip-audit` est absent du poste, l'oracle le lance par `uvx pip-audit` si `uvx` est
 présent : `uvx` l'exécute dans un environnement isolé de son cache, sans installation globale
-(l'oracle n'installe toujours rien). Le champ `synthese.pip.outil` dit quelle voie a servi.
+(l'oracle n'installe toujours rien). Le champ `synthese.pip.outil` dit quelle voie a servi. Sans
+`pip-audit` ni `uvx`, le remède du manque nomme la commande à lancer, version épinglée :
+`pip install pip-audit==2.10.1` ou `uv tool install pip-audit==2.10.1` (ou installer `uv`, qui fournit `uvx`).
 
 Un `SKIP` se rend comme un **manque nommé** (TF-2272) : le champ `manques` liste, par
 manifeste non audité, l'écosystème, la cause (outil absent, audit indisponible, format non
@@ -307,8 +309,9 @@ node oracles/self-test.mjs
 d'`oracle-dast` (13 cas) sont **entièrement déterministes** — zéro réseau, zéro dépendance de poste, et **aucun scan n'est
 lancé par le self-test**, fût-il autorisé (les cas d'exécution forcent `WEBSEC_DAST_ZAP` sur un
 chemin injouable). Le volet `oracle-sca` dépend de l'outillage **réellement présent** sur
-le poste qui exécute le self-test (npm, pip-audit) et de l'accès réseau à leurs bases
-d'avisos ; en leur absence, le self-test consigne un **SKIP motivé** par cas — jamais compté
+le poste qui exécute le self-test (npm, pip-audit ou à défaut uvx) et de l'accès réseau à leurs bases
+d'avisos ; en leur absence, le self-test consigne un **SKIP motivé** par cas, qui nomme la
+commande d'installation épinglée de `pip-audit` — jamais compté
 comme une preuve du sens rouge, jamais présenté comme un succès. Rejouer avant toute
 confiance dans une modification — un `✓` sans self-test rejoué n'est pas un `✓`.
 

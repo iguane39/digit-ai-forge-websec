@@ -5,6 +5,23 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-12 — `oracle-sca` 0.2.1 et self-test : le SKIP « pip-audit absent » nomme la commande épinglée, et uvx sert (TF-2398)
+
+- **Effet** : sur un poste sans `pip-audit` mais avec `uvx`, le self-test jouait les sens rouge et vert pip en SKIP
+  (« pip-audit absent du poste ») alors que l'oracle sait lancer `uvx pip-audit` depuis 0.2.0 ; il les joue maintenant par
+  `uvx`, et ces deux contrôles passent. Sur un poste sans les deux, chaque SKIP nomme la commande, lue du remède de l'oracle
+  (une seule source) : `pip install pip-audit==2.10.1` ou `uv tool install pip-audit==2.10.1`, ou installer `uv`.
+  Le remède du manque d'`oracle-sca` (« installer pip-audit ou uv ») donne la même commande ; la version 2.10.1 est celle
+  mesurée sur le poste le 12/11/2026. L'appel `uvx pip-audit` lui-même n'est pas épinglé (inchangé).
+- **Banc** : `runJson` prend un délai en paramètre ; les deux contrôles pip réels attendent 300 s, car `uvx` met 159 s à
+  résoudre `django==1.4` dans son environnement isolé (mesuré) et l'oracle lui laisse 240 s : à 120 s, un audit réussi
+  était lu `ILLISIBLE`. Aucune assertion n'est modifiée.
+- **Preuve** : 3 contrôles ajoutés (`pip-clean`, `uv-propre`, `poetry-propre` sans les deux outils → remède épinglé). Sur
+  l'état de départ avec ce banc : 197 PASS, 3 FAIL (remède « installer pip-audit ou uv »). Poste sans `pip-audit`, `uvx`
+  présent : 196 PASS, 0 FAIL, 2 SKIP avant ; 201 PASS, 0 FAIL, 0 SKIP après. Poste sans les deux : 196 PASS, 0 FAIL, 3 SKIP
+  nommant la commande. Poste complet : 200 PASS, 0 FAIL, 1 SKIP (`pip-audit` direct dépasse 90 s sur `pip-vulnerable`,
+  antérieur et non traité ici).
+
 ## 2026-11-10 — `scripts/caviarder-jetons.mjs` : le nom d'un en-tête ou d'un paramètre est jugé par motif (TF-2394, D-197 (c))
 
 - **Effet** : un en-tête dont le nom contient `token`, `key`, `secret`, `auth`, `session` ou `password` (sans casse, séparateurs
