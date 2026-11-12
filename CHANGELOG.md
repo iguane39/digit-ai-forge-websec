@@ -5,6 +5,28 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-12 — `wstg-cas.md` 0.2.1 : le référentiel dit ce que le mode actif d'`oracle-dast` couvre, et sous quelle autorisation (TF-2460)
+
+- **Effet** : le référentiel écrivait qu'`oracle-dast` ne lève que ce qu'une passe passive voit, vrai jusqu'à la 0.1.x, faux depuis le
+  mode actif réel de la 0.2.0 (TF-2444). Une section « Ce que le mode actif d'oracle-dast couvre » dit maintenant la forme de chaque mode,
+  l'autorisation exigée (fichier écrit, origine exacte, fenêtre, `actif_autorise: true`, instance dédiée, options `en_tete_acces`,
+  `debit_max_requetes_par_seconde`, `exclusions`), ce que l'oracle rend (des alertes ZAP, aucun identifiant WSTG) et ce qui n'est pas
+  couvert. La colonne « Outillage » nomme, pour 11 cas, la règle ZAP qui les vise et le mode ; 7 cas deviennent `oracle-dast` (ATHZ-01,
+  INPV-01, -05, -07, -11, -12, CLNT-04) et 4 restent manuels avec une part relevée (CONF-04, INPV-02, INPV-19, CLNT-01). Les comptes des
+  limites passent de « 31 manuels » à 21 manuels seuls, 4 partiels, 7 `oracle-dast`, 7 `oracle-exposition`.
+- **Mesuré le 12/11/2026, sur ce poste** : les noms des règles d'attaque active sont lus dans les modules `ascanrules` et `domxss` de l'image
+  `ghcr.io/zaproxy/zaproxy:stable` (ZAP 2.17.0), sans balayage. Un balayage actif réel de la cible de fixture locale (290 s, 950 requêtes
+  reçues, débit borné à 50 par seconde) a levé 4 alertes `high` (XSS reflété, injection SQL, XSS DOM, « Source Code Disclosure - File
+  Inclusion ») et 3 `medium`. Cette dernière règle n'est pas dans l'image : le balayage a chargé des règles que l'image n'a pas, cause non
+  vérifiée, et la liste des règles du référentiel est donc un minimum daté. Les cas ATHZ-01, INPV-02, -07, -11, -12, -19, CLNT-04 et CONF-04
+  ne reposent que sur le nom d'une règle : la forge ne les a jamais vus levés, et le référentiel le dit.
+- **Barrière** (classe `documentation-d-outil-differente-de-sa-sortie`) : le frontmatter porte `oracle_dast: 0.2.0`, la version décrite ;
+  le self-test la compare à la constante `VERSION` de l'oracle, et refuse une ligne de cas qui cite `oracle-dast` sans nommer `passif` ou
+  `actif`. Elle ne juge pas la prose : une version d'oracle qui change fait relire le référentiel, elle ne dit pas ce qu'il faut y écrire.
+- **Banc** : 5 contrôles ajoutés au self-test. Avant la correction, le contrôle vert rendait FAIL (« frontmatter sans `oracle_dast` ») sur le
+  fichier d'origine ; après, 236 PASS, 0 FAIL, 0 SKIP (231 PASS, 0 FAIL, 0 SKIP avant, même poste). Aucune assertion existante n'est modifiée.
+  Trois contrôles rouges, à double sens : champ absent, version périmée, cas sans mode.
+
 ## 2026-11-12 — `oracle-sca` 0.2.2 : le délai de pip-audit direct suit celui d'uvx, et l'appel uvx est épinglé (TF-2455)
 
 - **Effet** : `pip-audit` lancé directement avait 90 s par appel, `uvx` 240 s. Sur `pip-vulnerable` (django 1.4, des

@@ -1,10 +1,12 @@
 ---
-version: 0.2.0
+version: 0.2.1
 challenge_date: 2026-08-14
+oracle_dast: 0.2.0
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
   - "OWASP Application Security Verification Standard (ASVS) 5.0.0 — mai 2025, CC BY-SA 4.0 — colonne de rattachement de ce document, via referentiels/asvs-l1.md"
+  - "Noms des règles d'attaque active de ZAP 2.17.0 (modules ascanrules et domxss de l'image ghcr.io/zaproxy/zaproxy:stable), lus localement le 2026-11-12 dans leurs fichiers de messages, sans balayage ; alertes d'un balayage actif réel contre la cible de fixture locale du dépôt, même date — section « Ce que le mode actif d'oracle-dast couvre »"
 ---
 
 # Référentiel — cas de test WSTG curés (méthode de test, sous-ensemble)
@@ -42,16 +44,23 @@ classées **L2/L3** — hors table L1, mais nommées dans la « note de cohéren
 3 rattachés hors L1 (règles outillées). Chapitres et cas non curés : listés nommément
 en fin de document (loi transverse n°3 du pilot — l'oubli ne se tait pas).
 
+**Ajout du 12/11/2026 (0.2.1, TF-2460).** La colonne « Outillage » et les limites disaient qu'`oracle-dast`
+ne lève que ce qu'une passe passive voit. C'était exact jusqu'à `oracle-dast` 0.1.x ; depuis la 0.2.0 (TF-2444),
+son mode actif lance un balayage actif. La section « Ce que le mode actif d'oracle-dast couvre » dit ce qui
+change, cas par cas, et sous quelle autorisation. `oracle_dast` du frontmatter nomme la version d'oracle décrite :
+le self-test de la forge refuse ce fichier si cette version n'est plus celle de l'oracle.
+
 **Colonne « Outillage »** : `oracle-exposition` | `oracle-sca` | `oracle-dast` | `manuel` —
-jamais inventée. `oracle-dast` signale les cas qu'une passe **passive** ZAP peut lever ; le
-verdict reste soumis au garde-fou d'autorisation de cet oracle, et une absence d'alerte n'y
-vaut jamais preuve d'absence de défaut.
+jamais inventée. Un cas confié à `oracle-dast` nomme toujours le mode qui le lève, `passif` ou `actif` :
+le mode passif (`zap-baseline.py`) lit ce que la cible renvoie sans l'attaquer, le mode actif
+(`zap-full-scan.py`) attaque en plus les URL trouvées. Dans les deux modes le verdict reste soumis au garde-fou
+d'autorisation de cet oracle, et une absence d'alerte n'y vaut jamais preuve d'absence de défaut.
 
 ## 4.2 — Configuration and Deployment Management (WSTG-CONF)
 
 | ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
 |---|---|---|---|---|
-| WSTG-CONF-04 | Des fichiers de sauvegarde, sources ou dossiers de gestion de version traînent-ils sous la racine servie ? | Demander les chemins connus (`/.git/HEAD`, `/.svn/entries`, `*.bak`, `*.old`, `*.zip`) et vérifier que la réponse n'est pas un contenu servi | V13.4.1 | manuel (sonde de chemins) |
+| WSTG-CONF-04 | Des fichiers de sauvegarde, sources ou dossiers de gestion de version traînent-ils sous la racine servie ? | Demander les chemins connus (`/.git/HEAD`, `/.svn/entries`, `*.bak`, `*.old`, `*.zip`) et vérifier que la réponse n'est pas un contenu servi | V13.4.1 | manuel (sonde de chemins) ; oracle-dast (actif, partiel : règle « Hidden File Finder », qui sonde `.git/config`, `.svn/entries` et `.svn/wc.db`, pas les `*.bak`, `*.old` ni `*.zip`) |
 | WSTG-CONF-06 | Le serveur accepte-t-il des méthodes HTTP au-delà de celles dont l'application a besoin ? | Envoyer `OPTIONS`, puis `PUT`/`DELETE`/`TRACE` sur une route sensible et lire le code de retour effectif, pas seulement l'en-tête `Allow` | V3.5.3 | manuel |
 | WSTG-CONF-07 | Le service impose-t-il HTTPS par un en-tête HSTS de durée suffisante ? | Capturer une réponse HTTPS et lire `Strict-Transport-Security` (présence, `max-age` ≥ 1 an) | **V3.4.1** | **oracle-exposition (EX-3)** |
 | WSTG-CONF-12 | Une politique de sécurité de contenu est-elle posée, et est-elle autre chose qu'un joker ? | Lire `Content-Security-Policy` sur la réponse et vérifier qu'aucune directive de script n'est ouverte à `*` | hors L1 — cf. note de cohérence d'`asvs-l1.md` (L2/L3) | **oracle-exposition (EX-1, EX-2)** |
@@ -84,7 +93,7 @@ vaut jamais preuve d'absence de défaut.
 
 | ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
 |---|---|---|---|---|
-| WSTG-ATHZ-01 | Un paramètre qui désigne un fichier permet-il de sortir du répertoire prévu, ou d'inclure un fichier local ou distant ? | Repérer les paramètres de nom ou de chemin de fichier, y substituer une remontée de répertoire (`../`, encodée, double encodée), un chemin absolu puis une URL distante, et lire si un contenu hors de la racine est servi | V5.3.2 | manuel |
+| WSTG-ATHZ-01 | Un paramètre qui désigne un fichier permet-il de sortir du répertoire prévu, ou d'inclure un fichier local ou distant ? | Repérer les paramètres de nom ou de chemin de fichier, y substituer une remontée de répertoire (`../`, encodée, double encodée), un chemin absolu puis une URL distante, et lire si un contenu hors de la racine est servi | V5.3.2 | oracle-dast (actif : règles « Path Traversal » et « Remote File Inclusion » ; signal à qualifier) |
 | WSTG-ATHZ-02 | Une fonction ou une ressource réservée reste-t-elle accessible sans session, après déconnexion, ou depuis un rôle qui ne devrait pas l'avoir ? | Relever avec un compte administrateur de test toutes les fonctions réservées, puis rejouer chaque requête sans session, après déconnexion et avec un compte de rôle inférieur | V8.2.1, V8.3.1 | manuel |
 | WSTG-ATHZ-03 | Un utilisateur peut-il modifier son propre rôle ou ses privilèges, ou atteindre ce que détient un compte plus privilégié (élévation verticale) ou de même niveau (élévation horizontale) ? | Chercher dans les requêtes les champs de rôle, de groupe ou de niveau, les rejouer modifiés depuis un compte ordinaire, puis tenter les actions réservées à un compte plus privilégié et celles d'un compte pair | V8.2.1, V8.2.2 | manuel |
 | WSTG-ATHZ-04 | Une référence d'objet fournie par l'utilisateur (identifiant, nom de fichier, clé) suffit-elle à lire ou modifier l'objet d'un autre compte (IDOR) ? | Avec deux comptes de test qui possèdent chacun des objets, substituer dans la requête de l'un l'identifiant d'un objet de l'autre (lecture, modification, suppression) et comparer avec la réponse à un identifiant inexistant | V8.2.2 | manuel |
@@ -101,13 +110,13 @@ vaut jamais preuve d'absence de défaut.
 
 | ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
 |---|---|---|---|---|
-| WSTG-INPV-01 | Un paramètre renvoyé dans la page permet-il d'y injecter du script (XSS réfléchi) ? | Injecter un marqueur inoffensif dans chaque paramètre reflété et observer s'il ressort encodé ou interprété comme balise | V1.2.1 | oracle-dast (passif : reflet signalé, exploitation non prouvée) |
-| WSTG-INPV-02 | Un contenu enregistré ressort-il exécutable pour les autres utilisateurs (XSS stocké) ? | Déposer un marqueur inoffensif via chaque champ persisté, puis le relire depuis un autre compte et une autre vue | V1.3.1 | manuel |
-| WSTG-INPV-05 | Une entrée atteint-elle la base sans requête paramétrée (injection SQL) ? | Perturber la syntaxe d'un paramètre (quote, opérateur booléen, retard temporel) et observer erreur, différence de réponse ou de latence | V1.2.4 | manuel |
-| WSTG-INPV-07 | Le parseur XML accepte-t-il des entités externes ou une structure altérée ? | Soumettre un document déclarant une entité externe locale et observer si le contenu est résolu ou l'erreur détaillée | V1.5.1 | manuel |
-| WSTG-INPV-11 | Une entrée finit-elle évaluée comme du code applicatif (`eval`, désérialisation, template) ? | Injecter une expression neutre mais calculable dans les paramètres suspects et vérifier si le résultat calculé ressort | V1.3.2 | manuel |
-| WSTG-INPV-12 | Une entrée atteint-elle un appel système (injection de commande) ? | Ajouter un séparateur de commande suivi d'une commande inoffensive et observer la sortie ou le délai induit | V1.2.5 | manuel |
-| WSTG-INPV-19 | Une fonction qui va chercher une ressource à partir d'une valeur fournie (URL, nom de fichier, adresse de rappel) peut-elle être orientée vers une adresse interne ou un fichier local (SSRF) ? | Sur l'instance de recette autorisée, substituer à la valeur une adresse de bouclage, une adresse privée, le point d'accès de métadonnées du fournisseur de cloud, puis une redirection vers l'une d'elles, et observer réponse, délai ou contenu renvoyé | V5.3.2 | manuel |
+| WSTG-INPV-01 | Un paramètre renvoyé dans la page permet-il d'y injecter du script (XSS réfléchi) ? | Injecter un marqueur inoffensif dans chaque paramètre reflété et observer s'il ressort encodé ou interprété comme balise | V1.2.1 | oracle-dast (passif : reflet signalé, exploitation non prouvée ; actif : règle « Cross Site Scripting (Reflected) » et sa variante en réponse JSON, signal à qualifier ; alerte constatée sur la cible de fixture le 12/11/2026) |
+| WSTG-INPV-02 | Un contenu enregistré ressort-il exécutable pour les autres utilisateurs (XSS stocké) ? | Déposer un marqueur inoffensif via chaque champ persisté, puis le relire depuis un autre compte et une autre vue | V1.3.1 | manuel ; oracle-dast (actif, partiel : règle « Cross Site Scripting (Persistent) » et ses deux amorces ; ZAP relit dans la même session, la relecture depuis un autre compte reste manuelle) |
+| WSTG-INPV-05 | Une entrée atteint-elle la base sans requête paramétrée (injection SQL) ? | Perturber la syntaxe d'un paramètre (quote, opérateur booléen, retard temporel) et observer erreur, différence de réponse ou de latence | V1.2.4 | oracle-dast (actif : règle « SQL Injection » et ses variantes temporelles, signal à qualifier ; alerte constatée sur la cible de fixture le 12/11/2026) |
+| WSTG-INPV-07 | Le parseur XML accepte-t-il des entités externes ou une structure altérée ? | Soumettre un document déclarant une entité externe locale et observer si le contenu est résolu ou l'erreur détaillée | V1.5.1 | oracle-dast (actif : règles « XML External Entity Attack » et « Exponential Entity Expansion » ; signal à qualifier) |
+| WSTG-INPV-11 | Une entrée finit-elle évaluée comme du code applicatif (`eval`, désérialisation, template) ? | Injecter une expression neutre mais calculable dans les paramètres suspects et vérifier si le résultat calculé ressort | V1.3.2 | oracle-dast (actif : règles « Server Side Code Injection » et « Server Side Template Injection » ; signal à qualifier) |
+| WSTG-INPV-12 | Une entrée atteint-elle un appel système (injection de commande) ? | Ajouter un séparateur de commande suivi d'une commande inoffensive et observer la sortie ou le délai induit | V1.2.5 | oracle-dast (actif : règle « Remote OS Command Injection » et sa variante temporelle ; signal à qualifier) |
+| WSTG-INPV-19 | Une fonction qui va chercher une ressource à partir d'une valeur fournie (URL, nom de fichier, adresse de rappel) peut-elle être orientée vers une adresse interne ou un fichier local (SSRF) ? | Sur l'instance de recette autorisée, substituer à la valeur une adresse de bouclage, une adresse privée, le point d'accès de métadonnées du fournisseur de cloud, puis une redirection vers l'une d'elles, et observer réponse, délai ou contenu renvoyé | V5.3.2 | manuel ; oracle-dast (actif, partiel : seule règle voisine « Cloud Metadata Potentially Exposed », le module ascanrules ne porte pas de règle SSRF) |
 
 ## 4.10 — Business Logic Testing (WSTG-BUSL)
 
@@ -124,8 +133,8 @@ vaut jamais preuve d'absence de défaut.
 
 | ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
 |---|---|---|---|---|
-| WSTG-CLNT-01 | Le code client écrit-il une donnée contrôlée par l'URL dans le DOM sans passer par une fonction sûre (XSS DOM) ? | Suivre les puits (`innerHTML`, `document.write`, `eval`) depuis les sources (`location`, `postMessage`) dans le JS servi | V3.2.2 | manuel |
-| WSTG-CLNT-04 | Une redirection est-elle pilotée par un paramètre sans liste blanche de destinations ? | Remplacer la destination par une origine externe puis par un protocole dangereux (`javascript:`, `data:`) et voir si elle est suivie | V1.2.2 | manuel |
+| WSTG-CLNT-01 | Le code client écrit-il une donnée contrôlée par l'URL dans le DOM sans passer par une fonction sûre (XSS DOM) ? | Suivre les puits (`innerHTML`, `document.write`, `eval`) depuis les sources (`location`, `postMessage`) dans le JS servi | V3.2.2 | manuel ; oracle-dast (actif, partiel : règle « Cross Site Scripting (DOM Based) », qui rend un signal à qualifier, constaté le 12/11/2026 sur une cible de fixture dont la réflexion est côté serveur : l'alerte seule ne prouve pas un puits DOM) |
+| WSTG-CLNT-04 | Une redirection est-elle pilotée par un paramètre sans liste blanche de destinations ? | Remplacer la destination par une origine externe puis par un protocole dangereux (`javascript:`, `data:`) et voir si elle est suivie | V1.2.2 | oracle-dast (actif : règle « External Redirect » ; signal à qualifier) |
 | WSTG-CLNT-07 | La politique CORS renvoie-t-elle une origine reflétée ou un joker sur des données authentifiées ? | Rejouer une requête avec une `Origin` arbitraire et lire `Access-Control-Allow-Origin` / `-Credentials` de la réponse | V3.4.2 | manuel |
 | WSTG-CLNT-09 | La page peut-elle être encadrée par un site tiers (clickjacking) ? | Charger l'URL dans une iframe d'origine différente et vérifier `X-Frame-Options` / `frame-ancestors` | hors L1 — cf. note de cohérence d'`asvs-l1.md` (L2/L3) | **oracle-exposition (EX-5)** |
 
@@ -135,6 +144,51 @@ vaut jamais preuve d'absence de défaut.
 |---|---|---|---|---|
 | WSTG-CRYP-01 | Le service accepte-t-il encore des versions ou des suites TLS dépassées, ou un certificat non reconnu ? | Négocier explicitement chaque version de protocole et lire la chaîne du certificat présentée | V12.1.1, V12.2.2 | manuel (hors périmètre d'`oracle-exposition`, cf. `README.md §Limites`) |
 | WSTG-CRYP-03 | Une donnée sensible circule-t-elle en clair sur un canal non chiffré ? | Recenser les appels sortants du produit (API, redirections, ressources) et relever ceux servis en `http://` | V12.2.1 | oracle-exposition (partiel — juge l'URL capturée) |
+
+## Ce que le mode actif d'oracle-dast couvre
+
+Pour le lecteur qui choisit entre une passe passive et un balayage actif : depuis la 0.2.0 de l'oracle
+(12/11/2026, TF-2444), `--mode actif` lance `zap-full-scan.py` ou l'image Docker de ZAP. L'araignée parcourt la
+cible, les règles passives lisent chaque réponse, puis les règles d'attaque active rejouent les URL trouvées avec
+des entrées altérées. Le mode passif, qui reste le défaut, lance `zap-baseline.py` et n'attaque rien. Un mode ne
+se rabat jamais sur l'autre : un ZAP de la mauvaise forme rend un `SKIP` (`DAST-ACTIF-IMPOSSIBLE`,
+`DAST-PASSIF-IMPOSSIBLE`) et rien n'est lancé.
+
+**Autorisation exigée.** Le mode actif suit les conditions du mode passif, plus une. Un fichier d'autorisation
+écrit porte `autorisation_ecrite: true`, `mandat`, `proprietaire`, `environnement`, `cibles` et une `fenetre`
+datée en cours de validité ; l'origine de `--cible` figure à l'identique dans `cibles`, sans joker. Une cible en
+`production` exige `autorisation_production_distincte: true`. Le mode actif exige en plus `actif_autorise: true` :
+sans lui, `DAST-AUTZ-MODE` refuse le balayage avant toute émission vers la cible. Trois options du mandat valent
+dans les deux modes : `en_tete_acces` (un en-tête ajouté aux requêtes vers l'origine autorisée, le seul
+mécanisme d'authentification de l'oracle), `debit_max_requetes_par_seconde` et `exclusions` (chemins dont aucune requête
+ne part) ; une option mal formée refuse le balayage (`DAST-AUTZ-CHAMPS`). Chaque cas marqué `oracle-dast (actif …)`
+ci-dessus ne se joue que sous ces conditions, sur une instance dédiée.
+
+**Ce que l'oracle rend.** Des alertes ZAP triées par risque ; `high` et `medium` font échouer le verdict par défaut.
+Aucun identifiant WSTG ne circule dans son verdict : relier une alerte à un cas est un geste du lecteur, d'après
+le nom de la règle cité dans la colonne « Outillage ». Un cas marqué actif est donc « relevé si ZAP alerte »,
+jamais « tenu » : l'absence d'alerte ne dit rien du cas.
+
+**Ce que la forge a constaté, et ce qu'elle n'a pas constaté.**
+- Le self-test, avec un ZAP simulé, prouve le garde-fou, la ligne de commande de chaque mode et les options du mandat.
+- `scripts/preuve-dast-actif.mjs` prouve, avec le vrai ZAP, que le mode actif envoie à la cible de fixture des
+  sondes que le mode passif n'envoie pas.
+- Un balayage actif réel de cette même cible de fixture, joué le 12/11/2026 (290 s, 950 requêtes reçues, débit
+  borné à 50 par seconde, ZAP 2.17.0 par Docker), a levé quatre alertes `high` : « Cross Site Scripting (Reflected) » (INPV-01), « SQL Injection »
+  (INPV-05), « Cross Site Scripting (DOM Based) » (CLNT-01, voir sa ligne) et « Source Code Disclosure - File
+  Inclusion », puis trois alertes `medium` de configuration (CSP absente, HTTP seul, en-tête anti-clickjacking
+  absent). L'image ne porte aucune règle de ce dernier nom : le balayage a donc chargé des règles que l'image n'a pas
+  (cause non vérifiée, la mise à jour des modules au lancement est probable), et la liste des règles ci-dessus est
+  un minimum daté, pas la liste exacte d'un balayage.
+- Les autres cas marqués actifs (ATHZ-01, INPV-02, -07, -11, -12, -19, CLNT-04, CONF-04) s'appuient sur le seul nom
+  d'une règle installée : la forge ne les a jamais vus levés. Aucun balayage n'a visé une application riche ou
+  authentifiée.
+
+**Ce que le mode actif ne couvre pas.** Aucune règle d'attaque active lue dans l'image ne vise les cas ATHN-02,
+ATHN-03, ATHZ-02 à ATHZ-04, BUSL-01, -02, -03, -06, -08, -09, CONF-06, IDNT-02 ni SESS-05. Ils demandent des
+comptes, des rôles ou une connaissance du métier que ZAP n'a pas : ils restent `manuel`. Il n'existe pas de règle
+SSRF dans les modules lus, donc INPV-19 reste manuel. `oracle-dast` ne passe pas `-j` à ZAP : l'araignée AJAX ne
+tourne pas.
 
 ## Chapitres et cas NON curés
 
@@ -179,16 +233,20 @@ recouper au sommaire du dépôt source : une v5.0 publiée renumérote et ajoute
   test d'intrusion : un pentest est conduit par un humain qui enchaîne les faiblesses,
   improvise hors scénario et juge l'exploitabilité réelle. Ce document ne fait que fixer une
   méthode reproductible sur un sous-ensemble.
-- **Une méthode, pas un outil.** 31 des 39 cas sont marqués `manuel` et 3 autres ne sont
-  outillés que partiellement : ils décrivent le geste à faire, personne ne les exécute
-  automatiquement. Un cas coché sans geste exécuté n'est pas un cas tenu — seuls 5 cas
-  (CONF-07, CONF-12, INFO-02, SESS-02, CLNT-09) sont rendus par un oracle exécuté.
+- **Une méthode, avant d'être un outil.** Sur les 39 cas, 21 sont `manuel` seuls : ils décrivent le geste
+  à faire, personne ne les exécute automatiquement. 4 autres (CONF-04, INPV-02, INPV-19, CLNT-01) restent manuels
+  avec une part relevée par le mode actif d'`oracle-dast`. 7 sont confiés à `oracle-dast` en mode actif
+  (ATHZ-01, INPV-01, -05, -07, -11, -12, CLNT-04) et 7 à `oracle-exposition`, dont 2 partiellement (ATHN-01,
+  CRYP-03). Un cas coché sans geste exécuté n'est pas un cas tenu : seuls 5 cas (CONF-07, CONF-12, INFO-02,
+  SESS-02, CLNT-09) sont rendus par un oracle exécuté sans qualification humaine ; une alerte d'`oracle-dast`
+  est un signal à qualifier, et la forge n'en a constaté que trois sur sa cible de fixture (INPV-01, INPV-05,
+  CLNT-01).
 - **Couverture partielle assumée.** 2 chapitres entiers, plus les 56 cas nommés des chapitres
   partiellement couverts, sont hors périmètre (listés ci-dessus) : l'absence de constat sur
   ces cas n'est pas un constat d'absence de défaut.
 - **Tout cas actif est soumis au garde-fou dual-use.** Les gestes qui sollicitent réellement
   la cible (ATHN-02, ATHN-03, ATHZ-*, INPV-*, BUSL-*, CONF-06…) ne s'exécutent que sur périmètre autorisé par
   écrit, sur instance dédiée, jamais sur un système tiers — mêmes règles que
-  `oracles/oracle-dast.mjs`, qui les encode en refus fail-closed.
+  `oracles/oracle-dast.mjs`, qui les encode en refus fail-closed (le mode actif exige en plus `actif_autorise: true`).
 - **Cité, jamais recopié.** Les résumés et gestes ci-dessus sont une reformulation ; ils ne se
   substituent pas aux fiches WSTG, qui restent la référence opératoire.

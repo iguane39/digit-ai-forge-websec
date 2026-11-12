@@ -303,7 +303,10 @@ Là où `asvs-l1.md` dit *ce qu'on exige*, ce document dit *comment on le teste*
 chacun avec son geste de vérification et son outillage (`oracle-exposition` | `oracle-dast` |
 `manuel`). Deux chapitres entiers (ERRH, APIT) et 56 cas nommés restent **non
 curés**, listés explicitement dans le fichier — leur chapitre ASVS n'est pas curé non plus.
-`challenge_date: 2026-08-14` (re-challenger à la publication d'une WSTG v5.0).
+`challenge_date: 2026-08-14` (re-challenger à la publication d'une WSTG v5.0). Depuis la 0.2.1
+(TF-2460), le fichier dit aussi ce que le **mode actif** d'`oracle-dast` couvre (11 cas, par le nom de la
+règle ZAP qui les vise) et sous quelle autorisation ; son frontmatter porte `oracle_dast`, la version de
+l'oracle décrite, que le self-test compare à la version courante.
 
 ## Référentiel `referentiels/classes-attaque.md`
 
@@ -386,7 +389,8 @@ scénario (ZAP démarre et se met à jour avant de balayer).
   explicite. Ce refus est structurel, pas une option : il ne se désactive pas.
 - **Pas de pentest manuel.** Cette forge outille des vérifications machine reproductibles ;
   elle ne remplace ni un audit de sécurité humain, ni un test d'intrusion. `wstg-cas.md`
-  décrit une **méthode**, il ne l'exécute pas : 31 de ses 39 cas sont manuels.
+  décrit une **méthode**, il ne l'exécute pas : 21 de ses 39 cas sont manuels seuls, et 4 autres
+  le sont avec une part relevée par ZAP ; les alertes d'`oracle-dast` sont des signaux à qualifier.
 - **`oracle-sca` dépend du poste.** Aucun outil SCA n'est installé par cette forge ; si
   aucun de npm/pip-audit/uvx n'est présent (ou si le réseau vers leur base d'avisos est
   injoignable), le verdict est `SKIP` motivé, rendu comme un manque nommé — jamais un `PASS`

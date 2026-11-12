@@ -1261,5 +1261,46 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2394 : en-têtes à n
     `TF-1319 · ROUGE — une racine absente sort en 2 avec son motif, jamais en liste vide muette (obtenu exit ${absente.code})`);
 }
 
+// ── TF-2460 · le référentiel des cas WSTG suit la version et les modes d'oracle-dast ─────────────
+// Classe documentation-d-outil-differente-de-sa-sortie : le 12/11/2026, wstg-cas.md disait qu'oracle-dast
+// ne lève que ce qu'une passe passive voit, alors que sa version 0.2.0 lance un balayage actif. Le
+// référentiel porte maintenant la version d'oracle-dast qu'il décrit (`oracle_dast` du frontmatter) ;
+// une version d'oracle qui change sans que le référentiel soit relu fait échouer ce contrôle. Chaque
+// ligne de cas qui cite oracle-dast nomme aussi le mode (passif ou actif) qui la lève.
+{
+  const lire = (...p) => fs.readFileSync(path.join(HERE, "..", ...p), "utf8");
+  const sourceDast = fs.readFileSync(ORACLE_DAST, "utf8");
+  const versionDast = (sourceDast.match(/const VERSION = "([^"]+)"/) || [])[1];
+  const modesDast = ((sourceDast.match(/\[--mode ([a-z|]+)\]/) || [])[1] || "").split("|").filter(Boolean);
+  // Rend la liste des défauts d'un texte de référentiel face à la version et aux modes de l'oracle.
+  const defautsWstgDast = (texte) => {
+    const defauts = [];
+    const declaree = (texte.match(/^oracle_dast:\s*"?([0-9][^\s"]*)"?\s*$/m) || [])[1];
+    if (!declaree) defauts.push("frontmatter sans `oracle_dast` : le référentiel ne dit pas quelle version d'oracle-dast il décrit");
+    else if (declaree !== versionDast) defauts.push(`frontmatter \`oracle_dast: ${declaree}\` ≠ version de l'oracle (${versionDast}) : relire la section du mode actif puis aligner`);
+    for (const ligne of texte.split("\n")) {
+      if (!/^\|\s*\**WSTG-/.test(ligne)) continue;
+      const cellules = ligne.split("|").map((c) => c.trim());
+      const outillage = cellules[cellules.length - 2] || "";
+      const id = (cellules[1] || "").replace(/\*/g, "");
+      if (/oracle-dast/.test(outillage) && !modesDast.some((m) => new RegExp(`\\b${m}\\b`).test(outillage))) {
+        defauts.push(`${id} cite oracle-dast sans nommer son mode (${modesDast.join(" | ")})`);
+      }
+    }
+    return defauts;
+  };
+  ok(versionDast && modesDast.length === 2, `TF-2460 · l'oracle déclare sa version (${versionDast}) et ses deux modes (${modesDast.join(", ")})`);
+  const reel = lire("referentiels", "wstg-cas.md");
+  const defReel = defautsWstgDast(reel);
+  ok(defReel.length === 0, `TF-2460 · VERT — referentiels/wstg-cas.md décrit la version courante d'oracle-dast et nomme un mode à chaque cas qu'il lui confie${defReel.length ? " (défauts : " + defReel.join(" ; ") + ")" : ""}`);
+  // `[^\r\n]*` et non `.*` : le fichier peut être lu en CRLF (autocrlf), et `.` ne franchit pas `\r`.
+  const sansChamp = reel.replace(/^oracle_dast:[^\r\n]*\r?\n/m, "");
+  ok(sansChamp !== reel && defautsWstgDast(sansChamp).some((d) => /sans `oracle_dast`/.test(d)), "TF-2460 · ROUGE — un frontmatter sans `oracle_dast` est refusé (l'état du référentiel avant correction)");
+  const perime = reel.replace(/^oracle_dast:.*$/m, "oracle_dast: 0.1.0");
+  ok(defautsWstgDast(perime).some((d) => /0\.1\.0/.test(d)), "TF-2460 · ROUGE — une version d'oracle-dast décrite qui n'est plus la courante est refusée");
+  const sansMode = reel.replace(/^(\| WSTG-INPV-05 \|.*\| )[^|]*oracle-dast[^|]*\|\s*$/m, "$1oracle-dast |");
+  ok(sansMode !== reel && defautsWstgDast(sansMode).some((d) => /WSTG-INPV-05 cite oracle-dast sans nommer son mode/.test(d)), "TF-2460 · ROUGE — un cas confié à oracle-dast sans mode nommé est refusé");
+}
+
 console.log(`\nSelf-test forge-websec : ${pass} PASS, ${echec} FAIL, ${note} SKIP motivé (outillage/réseau du poste, non comptés)`);
 process.exit(echec ? 1 : 0);
