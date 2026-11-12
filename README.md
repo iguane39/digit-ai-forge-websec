@@ -141,7 +141,7 @@ réglée au niveau de la zone. Le site déployé se confirme par `capturer.mjs` 
 | Écosystème | Manifeste requis | Outil délégué | Seuil par défaut |
 |---|---|---|---|
 | npm | `package.json` + `package-lock.json` | `npm audit --package-lock-only --json` (déjà présent, aucune installation) | `critical=0`, `high=0` |
-| pip | `requirements.txt`, `uv.lock` ou `poetry.lock` | `pip-audit -r <requirements> --format json`, sinon `uvx pip-audit` | `vulnerabilites=0` (paquets touchés) |
+| pip | `requirements.txt`, `uv.lock` ou `poetry.lock` | `pip-audit -r <requirements> --format json`, sinon `uvx --from pip-audit==2.10.1 pip-audit` | `vulnerabilites=0` (paquets touchés) |
 
 ```
 node oracles/oracle-sca.mjs <dossier-cible> [--seuils <fichier.json>]
@@ -157,7 +157,11 @@ résolution) sont auditées en deux lots, `pip-audit` refusant le doublon dans u
 
 Quand `pip-audit` est absent du poste, l'oracle le lance par `uvx pip-audit` si `uvx` est
 présent : `uvx` l'exécute dans un environnement isolé de son cache, sans installation globale
-(l'oracle n'installe toujours rien). Le champ `synthese.pip.outil` dit quelle voie a servi. Sans
+(l'oracle n'installe toujours rien). L'appel est épinglé à la version du remède
+(`uvx --from pip-audit==2.10.1 pip-audit`) : sans cela, uvx prendrait la dernière version publiée et le
+verdict changerait avec elle. Les deux voies ont le même délai de 240 s par appel (`pip-audit` direct
+a mis 85, 90 et 174 s sur `pip-vulnerable`, `uvx` 159 s). Les champs `synthese.pip.outil` et
+`synthese.pip.delai_s` disent quelle voie a servi et quel délai elle avait. Sans
 `pip-audit` ni `uvx`, le remède du manque nomme la commande à lancer, version épinglée :
 `pip install pip-audit==2.10.1` ou `uv tool install pip-audit==2.10.1` (ou installer `uv`, qui fournit `uvx`).
 

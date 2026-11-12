@@ -5,7 +5,7 @@
 //
 // Comportement, calqué sur pip-audit 2.10 mesuré le 06/11/2026 :
 //   --version                     → exit 0
-//   uvx : le premier argument est « pip-audit », retiré avant l'analyse
+//   uvx : le premier argument est « pip-audit » ou « --from <paquet> pip-audit », retiré avant l'analyse
 //   -r <fichier> --format json    → rapport JSON {dependencies:[{name,version,vulns}]} lu depuis
 //                                   les lignes `nom==version` ; un paquet nommé « django » en
 //                                   version 1.x est vulnérable (id fictif PYSEC-SIM-0001) ; exit 1
@@ -13,14 +13,18 @@
 //   deux versions du même nom     → erreur « duplicate requirements » sans JSON, exit 1 (pip-audit
 //                                   refuse ce fichier avec --no-deps)
 //   WEBSEC_SIM_ECHEC=1            → pas de JSON, message d'erreur réseau, exit 1
-//   WEBSEC_SIM_TRACE=<fichier>    → ajoute une ligne JSON par appel : {mode, argv}
+//   WEBSEC_SIM_TRACE=<fichier>    → ajoute une ligne JSON par appel : {mode, epingle, argv}
 import fs from "node:fs";
 
 let argv = process.argv.slice(2);
-const mode = argv[0] === "pip-audit" ? "uvx" : "direct";
-if (mode === "uvx") argv = argv.slice(1);
+// uvx : « pip-audit … » (appel nu) ou « --from <paquet>==<version> pip-audit … » (appel épinglé, TF-2455) ;
+// `epingle` garde le paquet nommé par --from, que la trace rend au self-test.
+let epingle = null;
+let mode = "direct";
+if (argv[0] === "--from" && argv[2] === "pip-audit") { mode = "uvx"; epingle = argv[1]; argv = argv.slice(3); }
+else if (argv[0] === "pip-audit") { mode = "uvx"; argv = argv.slice(1); }
 
-if (process.env.WEBSEC_SIM_TRACE) fs.appendFileSync(process.env.WEBSEC_SIM_TRACE, JSON.stringify({ mode, argv }) + "\n");
+if (process.env.WEBSEC_SIM_TRACE) fs.appendFileSync(process.env.WEBSEC_SIM_TRACE, JSON.stringify({ mode, epingle, argv }) + "\n");
 
 if (argv.includes("--version")) { console.log("outil-simule 0.0"); process.exit(0); }
 

@@ -10,7 +10,8 @@
 //          (uv.lock, poetry.lock) est lu ici, ses paquets de registre sont écrits épinglés dans
 //          un requirements temporaire HORS de la cible, et audités avec --no-deps --disable-pip
 //          (rien n'est résolu ni installé). Si pip-audit est absent du poste, il est lancé par
-//          `uvx pip-audit` quand uvx est présent (0.2.0, TF-2272) ; ni l'un ni l'autre → manque nommé.
+//          `uvx --from pip-audit==<version du remède> pip-audit` quand uvx est présent (0.2.0, TF-2272 ;
+//          épinglé en 0.2.2, TF-2455) ; ni l'un ni l'autre → manque nommé. Les deux voies ont le même délai.
 // osv-scanner (multi-écosystème) n'est PAS enveloppé en v0 faute de poste équipé pour le
 // prouver par fixture — restes explicites en README, jamais promis au catalogue.
 //
@@ -36,7 +37,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const VERSION = "0.2.1";
+const VERSION = "0.2.2";
 const ORACLE = "oracle-sca";
 // Version de pip-audit nommée dans le remède d'un SKIP « outil absent » (TF-2398) : celle mesurée
 // sur le poste le 12/11/2026 (`pip-audit --version` → 2.10.1). Le remède donne une commande, pas un vœu.
@@ -161,13 +162,19 @@ if (fs.existsSync(npmLock) && fs.existsSync(npmManifest)) {
 
 // ── pip ────────────────────────────────────────────────────────────────────
 // Voie d'exécution de pip-audit : la commande du poste, sinon `uvx pip-audit` (TF-2272), sinon rien.
-const pipAudit = resoudre("pip-audit", "WEBSEC_SCA_PIP_AUDIT", 90000);
-const uvx = resoudre("uvx", "WEBSEC_SCA_UVX", 240000);
+// Un seul délai pour les deux voies (TF-2455) : `pip-audit` direct met 85 à 90 s et plus sur `pip-vulnerable`
+// (django 1.4, des centaines d'avis), `uvx` 159 s (mesurées le 12/11/2026) ; l'ancien délai de 90 s de la voie
+// directe tombait sur la frontière et rendait un audit réussi `indisponible`.
+const DELAI_PIP_AUDIT = 240000;
+const pipAudit = resoudre("pip-audit", "WEBSEC_SCA_PIP_AUDIT", DELAI_PIP_AUDIT);
+const uvx = resoudre("uvx", "WEBSEC_SCA_UVX", DELAI_PIP_AUDIT);
 let voieMemo;
 function voiePip() {
   if (voieMemo !== undefined) return voieMemo;
   if (outilDisponible(pipAudit)) voieMemo = { libelle: "pip-audit", ...pipAudit };
-  else if (outilDisponible(uvx)) voieMemo = { libelle: "uvx pip-audit", ...uvx, pre: [...uvx.pre, "pip-audit"] };
+  // L'appel uvx est épinglé à la version du remède (TF-2455) : sans `--from`, uvx prend la dernière version publiée
+  // et le verdict changerait avec elle. `--from` s'écrit pareil sur toute version d'uv.
+  else if (outilDisponible(uvx)) voieMemo = { libelle: "uvx pip-audit", ...uvx, pre: [...uvx.pre, "--from", PIP_AUDIT_EPINGLE, "pip-audit"] };
   else voieMemo = null;
   return voieMemo;
 }
@@ -233,6 +240,7 @@ const pipVus = new Set();
 const pipVulnerables = new Map();
 const pipParSource = {};
 let pipVoie = null;
+let pipDelai = null;
 for (const s of sourcesPip) {
   const base = path.basename(s.fichier);
   const voie = voiePip();
@@ -278,13 +286,14 @@ for (const s of sourcesPip) {
   }
   ecosystemesAudites++;
   pipVoie = voie.libelle;
+  pipDelai = voie.delai;
   const vulnerables = deps.filter((d) => Array.isArray(d.vulns) && d.vulns.length);
   for (const d of deps) pipVus.add(`${d.name}@${d.version}`);
   for (const d of vulnerables) pipVulnerables.set(`${d.name}@${d.version}`, { d, fichier: s.fichier });
   pipParSource[base] = { paquets_vulnerables: vulnerables.length, total_paquets: deps.length };
 }
 if (pipVoie) {
-  synthese.pip = { paquets_vulnerables: pipVulnerables.size, total_paquets: pipVus.size, outil: pipVoie, par_source: pipParSource };
+  synthese.pip = { paquets_vulnerables: pipVulnerables.size, total_paquets: pipVus.size, outil: pipVoie, delai_s: pipDelai / 1000, par_source: pipParSource };
   const seuil = seuils.pip.vulnerabilites;
   if (typeof seuil === "number" && pipVulnerables.size > seuil) {
     for (const { d, fichier } of pipVulnerables.values()) {

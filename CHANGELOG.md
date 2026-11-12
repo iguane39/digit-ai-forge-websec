@@ -5,6 +5,26 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-12 — `oracle-sca` 0.2.2 : le délai de pip-audit direct suit celui d'uvx, et l'appel uvx est épinglé (TF-2455)
+
+- **Effet** : `pip-audit` lancé directement avait 90 s par appel, `uvx` 240 s. Sur `pip-vulnerable` (django 1.4, des
+  centaines d'avis), le premier met 85 à 174 s selon le réseau : un audit qui aurait réussi était rendu « indisponible »
+  (`délai de 90 s dépassé`), et le self-test d'un poste complet gardait un SKIP. Les deux voies ont maintenant 240 s par appel,
+  et `uvx` est appelé en `uvx --from pip-audit==2.10.1 pip-audit …`, la version que nomme le remède d'un SKIP « outil absent ».
+  Sans `--from`, uvx prenait la dernière version publiée et le verdict changeait avec elle. `synthese.pip.delai_s` dit le
+  délai de la voie qui a servi.
+- **Avant, mesuré le 12/11/2026 sur ce poste** : trois appels de `pip-audit` direct sur `pip-vulnerable` ont pris 85 s (par
+  l'oracle, FAIL rendu à temps), 90 s et 174 s ; le self-test intégral rendait 228 PASS, 0 FAIL, 1 SKIP, ce SKIP étant
+  `pip-vulnerable` en `délai de 90 s dépassé`.
+- **Après, même poste** : 231 PASS, 0 FAIL, 0 SKIP (17:49 à 17:54), `pip-vulnerable` rend FAIL avec `SCA-PIP` par la voie
+  directe ; la voie `uvx` épinglée rend FAIL en 127 s sur la même fixture (`outil` : `uvx pip-audit`, `delai_s` : 240).
+- **Banc** : 2 contrôles ajoutés à l'outil simulé : la trace de `outil-simule.mjs` garde le paquet nommé par `--from`, et le
+  self-test lit la version du remède de l'oracle pour la comparer à celle de l'appel (une seule source) ; les deux voies
+  portent le même `delai_s`, au moins 180 s. Double sens joué avec un `PATH` réduit à node, donc sans outil réel : le code de
+  départ avec les nouveaux contrôles rend 224 PASS, 2 FAIL (appel non épinglé, `delai_s` absent) ; le code corrigé rend 226
+  PASS, 0 FAIL. Aucune assertion existante n'est modifiée. Le délai lui-même n'a pas de cas déterministe : le prouver demanderait
+  un outil simulé de plus de 90 s ; il se lit par `delai_s` et par la mesure ci-dessus.
+
 ## 2026-11-12 — `oracle-dast` 0.2.0 : le mode actif lance un vrai balayage actif, et l'autorisation porte en-tête, débit et exclusions (TF-2444)
 
 - **Effet** : `--mode actif` exigeait `actif_autorise: true` puis lançait quand même `zap-baseline.py`, la passe passive.

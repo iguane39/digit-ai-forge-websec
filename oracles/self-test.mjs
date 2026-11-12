@@ -32,7 +32,7 @@ let pass = 0, echec = 0, note = 0;
 const ok = (b, m) => { console.log(`  [${b ? "PASS" : "FAIL"}] ${m}`); b ? pass++ : echec++; };
 const skipNote = (m) => { console.log(`  [SKIP] ${m}`); note++; };
 
-// `delai` : l'oracle-sca laisse 240 s à uvx (résolution de django 1.4 dans un environnement isolé, 159 s mesurées le
+// `delai` : l'oracle-sca laisse 240 s à pip-audit direct comme à uvx (TF-2455 ; uvx : résolution de django 1.4 dans un environnement isolé, 159 s mesurées le
 // 12/11/2026) ; le banc doit attendre plus longtemps que l'oracle, sinon un audit réussi est lu comme ILLISIBLE (TF-2398).
 function runJson(script, args, env, delai = 120000) {
   try { return JSON.parse(execFileSync(process.execPath, [script, ...args, "--json-only"], { encoding: "utf8", timeout: delai, ...(env ? { env: { ...process.env, ...env } } : {}) })); }
@@ -170,6 +170,12 @@ if (!pipVoie) {
   const appels = lireTrace().filter((a) => a.argv.includes("-r")); // hors sonde de présence (--version)
   ok(appels.length === 1 && appels[0].mode === "uvx" && appels[0].argv.includes("--no-deps") && appels[0].argv.includes("--disable-pip"),
     `uv.lock : un seul appel d'audit « uvx pip-audit … --no-deps --disable-pip », rien n'est résolu ni installé (obtenu ${JSON.stringify(appels)})`);
+  // TF-2455 : l'appel uvx est épinglé à la version que nomme le remède de l'oracle (une seule source), et les deux
+  // voies ont le même délai, au moins celui qu'il faut à pip-audit direct (174 s mesurées) et à uvx (159 s) sur django 1.4.
+  const versionRemede = (/pip-audit==(\d+\.\d+\.\d+)/.exec(remedePipAbsent()) || [])[1];
+  ok(Boolean(versionRemede) && appels[0] && appels[0].epingle === `pip-audit==${versionRemede}`,
+    `l'appel uvx est épinglé à la version du remède, « uvx --from pip-audit==${versionRemede} pip-audit » (obtenu ${JSON.stringify(appels[0] && appels[0].epingle)})`);
+  const delaiUvx = r.synthese && r.synthese.pip && r.synthese.pip.delai_s;
   const reqUtilise = appels[0] && appels[0].argv[appels[0].argv.indexOf("-r") + 1];
   ok(typeof reqUtilise === "string" && reqUtilise.startsWith(tmpOracle) && !reqUtilise.startsWith(FX("sca")) && fs.readdirSync(tmpOracle).length === 0,
     `le requirements dérivé du verrou est écrit dans le dossier temporaire, jamais dans la cible, et supprimé après l'audit (obtenu ${reqUtilise}, ${fs.readdirSync(tmpOracle).length} reste)`);
@@ -193,6 +199,8 @@ if (!pipVoie) {
   r = runJson(ORACLE_SCA, [FX("sca", "uv-vulnerable")], direct);
   ok(r.verdict === "FAIL" && r.synthese.pip && r.synthese.pip.outil === "pip-audit" && lireTrace().length > 0 && lireTrace().every((a) => a.mode === "direct"),
     `pip-audit présent, uvx absent → pip-audit est lancé directement, sans uvx (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip && r.synthese.pip.outil)})`);
+  ok(typeof delaiUvx === "number" && delaiUvx >= 180 && r.synthese.pip.delai_s === delaiUvx,
+    `le délai de la voie directe suit celui de la voie uvx, au moins 180 s (obtenu directe ${r.synthese.pip.delai_s} s, uvx ${delaiUvx} s)`);
 
   r = runJson(ORACLE_SCA, [FX("sca", "pip-vulnerable")], viaUvx);
   ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && r.synthese.pip.outil === "uvx pip-audit",
