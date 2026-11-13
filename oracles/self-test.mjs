@@ -460,6 +460,115 @@ function runDast(args, env) {
     const r = runDast(["--cible", CIBLE_OK, "--autorisation", f, "--rapport", AUTZ("rapport-zap-propre.json")]);
     ok(r.verdict === "PASS", `voie --rapport : rien n'est émis, les options de balayage ne sont pas lues (obtenu ${r.verdict})`);
   }
+
+  // ── TF-2485 · la forme prescrite sur la plateforme, jouée par un VRAI script qui enveloppe le ZAP simulé ──
+  // Classe oracle-chemin-prescrit-inoperant-sur-sa-cible : le 12/11/2026, chez un produit, zap.bat ne partait
+  // pas (Node v24.16.0 refuse un .bat sans shell : EINVAL) et l'oracle rendait « lancé… sortie vide ». Le
+  // banc ne jouait que des .mjs, lancés par node : la forme prescrite n'y passait jamais. Ici, zap.bat sur
+  // Windows, zap.sh ailleurs, avec les options qui portent les caractères que cmd.exe interpréterait hors
+  // guillemets (espace et apostrophe dans l'en-tête, `^ ( ) $ \` dans les expressions).
+  const enveloppe = (nomDossier) => {
+    const d = path.join(dossier, nomDossier);
+    fs.mkdirSync(d);
+    const coeur = path.join(d, "zap-simule.mjs");
+    fs.copyFileSync(AUTZ("zap-simule.mjs"), coeur);
+    if (process.platform === "win32") {
+      const f = path.join(d, "zap.bat");
+      fs.writeFileSync(f, `@"${process.execPath}" "${coeur}" %*\r\n`);
+      return f;
+    }
+    const f = path.join(d, "zap.sh");
+    fs.writeFileSync(f, `#!/bin/sh\nexec "${process.execPath}" "${coeur}" "$@"\n`, { mode: 0o755 });
+    return f;
+  };
+  const ZAP_REEL = enveloppe("zap-natif");
+  const forme = path.basename(ZAP_REEL);
+  {
+    const { r, lignes } = lancer(ZAP_REEL, AUTZ("autorisation-actif-options.json"), "actif");
+    const a = (lignes[0] && lignes[0].argv) || [];
+    const iDir = a.indexOf("-dir");
+    ok(r.verdict === "PASS" && lignes.length === 1 && r.synthese.balayage.forme === "rapide",
+      `TF-2485 · VERT — ${forme} réel (forme prescrite sur ${process.platform}) lancé, son rapport jugé (obtenu ${r.verdict}, ${lignes.length} lancement${r.verdict !== "PASS" ? ", " + msgs(r).slice(0, 200) : ""})`);
+    ok(a.includes(`replacer.full_list(0).replacement=${ACCES}`) && a.includes("replacer.full_list(0).url=^https://recette\\.exemple\\.tld(/.*)?$"),
+      `TF-2485 · VERT — à travers ${forme}, chaque argument arrive intact (espace, apostrophe, ^ ( ) $ \\)`);
+    ok(lignes[0] && path.resolve(lignes[0].cwd).toLowerCase() === path.dirname(ZAP_REEL).toLowerCase() && iDir >= 0 && /zap-home$/.test(a[iDir + 1] || ""),
+      `TF-2485 · VERT — ZAP natif tourne dans son propre dossier, avec -dir vers un dossier jetable (cwd ${lignes[0] && lignes[0].cwd})`);
+  }
+  if (process.platform === "win32") {
+    fs.rmSync(trace, { force: true });
+    const r = runDast(["--cible", `${CIBLE_OK}/a%20b`, "--autorisation", AUTZ("autorisation-actif.json"), "--mode", "actif"], {
+      WEBSEC_DAST_ZAP: ZAP_REEL, WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-propre.json"),
+    });
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-LANCEMENT") && !fs.existsSync(trace),
+      `TF-2485 · ROUGE — un argument qui porte « % » n'est jamais réécrit pour cmd.exe : SKIP DAST-LANCEMENT, rien de lancé (obtenu ${r.verdict})`);
+  } else skipNote("TF-2485 · ROUGE « % » pour cmd.exe : propre à Windows, non joué sur ce poste");
+  {
+    const faux = path.join(dossier, process.platform === "win32" ? "zap.exe" : "zap");
+    fs.writeFileSync(faux, "pas un binaire\n", { mode: 0o644 });
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-actif.json"), "--mode", "actif"], { WEBSEC_DAST_ZAP: faux });
+    ok(r.verdict === "SKIP" && /refusé de lancer la commande \(\S+\)/.test(msgs(r)) && r.synthese.balayage.execution.erreur && !/ lancé mais /.test(msgs(r)),
+      `TF-2485 · ROUGE — un lancement refusé par le système est dit avec son code (${r.synthese && r.synthese.balayage && r.synthese.balayage.execution && r.synthese.balayage.execution.erreur}), jamais « lancé… sortie vide »`);
+  }
+
+  // ── TF-2486 · le délai de ZAP suit le débit du mandat, et un délai dépassé arrête tout l'arbre ──
+  // Le 12/11/2026 : délai fixe de 30 min, quel que soit le débit. À 10 requêtes par minute, environ 299
+  // requêtes en 30 min, contre 891 mesurées au banc pour 4 routes : le balayage aurait fini sans rapport.
+  {
+    const f = path.join(dossier, "autorisation-debit-lent.json");
+    fs.writeFileSync(f, JSON.stringify({ ...valide, debit_max_requetes_par_seconde: 10 / 60 }));
+    const { r } = lancer(ZAP.complet, f, "actif");
+    ok(r.verdict === "PASS" && r.synthese.balayage.delai_max_minutes === 105 && /1000 requêtes × 6000 ms/.test(r.synthese.balayage.delai_source),
+      `TF-2486 · VERT — 10 requêtes par minute : délai déduit de 1000 × 6 000 ms + 5 min = 105 min, plus 30 (obtenu ${r.synthese.balayage && r.synthese.balayage.delai_max_minutes} min)`);
+  }
+  {
+    const f = path.join(dossier, "autorisation-plafond.json");
+    fs.writeFileSync(f, JSON.stringify({ ...valide, debit_max_requetes_par_seconde: 10 / 60, plafond_requetes: 3000 }));
+    const { r } = lancer(ZAP.complet, f, "actif");
+    ok(r.verdict === "PASS" && r.synthese.balayage.delai_max_minutes === 305, `TF-2486 · VERT — plafond_requetes: 3000 au même débit → 305 min (obtenu ${r.synthese.balayage && r.synthese.balayage.delai_max_minutes})`);
+  }
+  {
+    const f = path.join(dossier, "autorisation-duree.json");
+    fs.writeFileSync(f, JSON.stringify({ ...valide, duree_max_minutes: 240 }));
+    const { r } = lancer(ZAP.complet, f, "actif");
+    ok(r.verdict === "PASS" && r.synthese.balayage.delai_max_minutes === 240 && /duree_max_minutes/.test(r.synthese.balayage.delai_source),
+      `TF-2486 · VERT — duree_max_minutes: 240 prime sur le débit (obtenu ${r.synthese.balayage && r.synthese.balayage.delai_max_minutes})`);
+  }
+  {
+    const f = path.join(dossier, "autorisation-fenetre-courte.json");
+    const finProche = new Date(Date.now() + 10 * 60000).toISOString();
+    fs.writeFileSync(f, JSON.stringify({ ...valide, duree_max_minutes: 240, fenetre: { debut: "2026-01-01", fin: finProche } }));
+    const { r } = lancer(ZAP.complet, f, "actif");
+    const d = r.synthese.balayage && r.synthese.balayage.delai_max_minutes;
+    ok(r.verdict === "PASS" && d <= 10 && d > 9 && /fin de la fenêtre/.test(r.synthese.balayage.delai_source),
+      `TF-2486 · VERT — fenêtre qui finit dans 10 min : le délai s'y borne (obtenu ${d} min)`);
+  }
+  {
+    const f = path.join(dossier, "autorisation-courte.json");
+    fs.writeFileSync(f, JSON.stringify({ ...valide, duree_max_minutes: 0.03 }));
+    const fin = path.join(dossier, "fin-simule.txt");
+    const debut = Date.now();
+    const { r } = lancer(ZAP_REEL, f, "actif", { WEBSEC_DAST_SIMULE_ATTENTE_MS: "6000", WEBSEC_DAST_SIMULE_FIN: fin });
+    const duree = Date.now() - debut;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, 7000 - duree));
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-DELAI") && /1,8 s|0\.03 min/.test(msgs(r)) && r.synthese.balayage.execution.coupe_par_le_delai === true,
+      `TF-2486 · ROUGE — délai dépassé : SKIP DAST-DELAI qui dit la durée et sa source (obtenu ${r.verdict}, ${(r.findings || []).map((x) => x.regle).join(",")})`);
+    ok(!fs.existsSync(fin) && duree < 5500,
+      `TF-2486 · ROUGE — l'arbre entier est arrêté : le ZAP simulé, petit-enfant par ${forme}, n'a jamais fini (oracle rendu en ${duree} ms, marqueur de fin ${fs.existsSync(fin) ? "PRÉSENT" : "absent"})`);
+  }
+  for (const [libelle, variante, motif] of [
+    ["durée à 0", { duree_max_minutes: 0 }, "duree_max_minutes"],
+    ["durée en texte", { duree_max_minutes: "30" }, "duree_max_minutes"],
+    ["durée au-delà de 24 h", { duree_max_minutes: 2000 }, "duree_max_minutes"],
+    ["plafond à 0", { plafond_requetes: 0 }, "plafond_requetes"],
+    ["plafond non entier", { plafond_requetes: 1.5 }, "plafond_requetes"],
+    ["plafond sans débit", { plafond_requetes: 500, debit_max_requetes_par_seconde: undefined }, "sans debit_max_requetes_par_seconde"],
+  ]) {
+    const f = path.join(dossier, "autorisation-rouge.json");
+    fs.writeFileSync(f, JSON.stringify({ ...valide, ...variante }));
+    const { r, lignes } = lancer(ZAP.complet, f, "actif");
+    ok(r.verdict === "FAIL" && aRegle(r, "DAST-AUTZ-CHAMPS") && msgs(r).includes(motif) && lignes.length === 0,
+      `TF-2486 · ROUGE — ${libelle} → FAIL DAST-AUTZ-CHAMPS qui cite « ${motif} », rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
   fs.rmSync(dossier, { recursive: true, force: true });
 }
 

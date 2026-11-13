@@ -1,7 +1,7 @@
 ---
-version: 0.2.1
+version: 0.2.2
 challenge_date: 2026-08-14
-oracle_dast: 0.2.0
+oracle_dast: 0.3.0
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
@@ -161,8 +161,11 @@ datée en cours de validité ; l'origine de `--cible` figure à l'identique dans
 sans lui, `DAST-AUTZ-MODE` refuse le balayage avant toute émission vers la cible. Trois options du mandat valent
 dans les deux modes : `en_tete_acces` (un en-tête ajouté aux requêtes vers l'origine autorisée, le seul
 mécanisme d'authentification de l'oracle), `debit_max_requetes_par_seconde` et `exclusions` (chemins dont aucune requête
-ne part) ; une option mal formée refuse le balayage (`DAST-AUTZ-CHAMPS`). Chaque cas marqué `oracle-dast (actif …)`
-ci-dessus ne se joue que sous ces conditions, sur une instance dédiée.
+ne part) ; une option mal formée refuse le balayage (`DAST-AUTZ-CHAMPS`). Depuis la 0.3.0, deux options bornent sa
+durée : `duree_max_minutes`, ou `plafond_requetes` d'où la durée se déduit avec le débit, dans la fenêtre du mandat. Un
+balayage coupé par ce délai rend `SKIP` `DAST-DELAI`, sans alerte : un cas marqué actif n'est alors pas joué du tout,
+il n'est pas « sans alerte ». Chaque cas marqué `oracle-dast (actif …)` ci-dessus ne se joue que sous ces conditions,
+sur une instance dédiée.
 
 **Ce que l'oracle rend.** Des alertes ZAP triées par risque ; `high` et `medium` font échouer le verdict par défaut.
 Aucun identifiant WSTG ne circule dans son verdict : relier une alerte à un cas est un geste du lecteur, d'après

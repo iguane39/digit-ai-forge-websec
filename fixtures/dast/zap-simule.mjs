@@ -8,10 +8,18 @@
 import fs from "node:fs";
 import path from "node:path";
 
+//
+// TF-2486 : WEBSEC_DAST_SIMULE_ATTENTE_MS le fait durer AVANT de déposer son rapport (un balayage
+// long) ; WEBSEC_DAST_SIMULE_FIN nomme un fichier qu'il écrit en finissant. Si ce fichier existe après
+// un délai dépassé, l'oracle n'a pas arrêté l'arbre de processus : le balayage aurait continué.
+// La trace porte aussi le dossier courant (TF-2485 : zap.bat exige celui de ZAP).
 const argv = process.argv.slice(2);
 const trace = process.env.WEBSEC_DAST_SIMULE_TRACE;
-if (trace) fs.appendFileSync(trace, JSON.stringify({ script: path.basename(process.argv[1]), argv }) + "\n");
+if (trace) fs.appendFileSync(trace, JSON.stringify({ script: path.basename(process.argv[1]), argv, cwd: process.cwd() }) + "\n");
+const attente = Number(process.env.WEBSEC_DAST_SIMULE_ATTENTE_MS || 0);
+if (attente > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attente);
 const i = argv.findIndex((a) => a === "-J" || a === "-quickout");
 if (i >= 0 && argv[i + 1] && process.env.WEBSEC_DAST_SIMULE_RAPPORT) {
   fs.copyFileSync(process.env.WEBSEC_DAST_SIMULE_RAPPORT, argv[i + 1]);
 }
+if (process.env.WEBSEC_DAST_SIMULE_FIN) fs.writeFileSync(process.env.WEBSEC_DAST_SIMULE_FIN, "fini\n");
