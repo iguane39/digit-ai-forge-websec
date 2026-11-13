@@ -5,6 +5,49 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-13 — `oracle-dast` 0.2.1 : l'image ZAP est épinglée par empreinte, la mise à jour des modules est coupée, les règles de l'image sont listées (TF-2477)
+
+- **Effet** : la voie Docker lançait `ghcr.io/zaproxy/zaproxy:stable`, une étiquette qui change d'image sans prévenir, et
+  `zap-baseline.py` / `zap-full-scan.py` lançaient `-addonupdate` puis installaient `pscanrulesBeta` (et `ascanrulesBeta` pour le
+  balayage complet) depuis le réseau : les règles qui tournaient n'étaient ni celles de l'image ni celles du référentiel. L'oracle
+  lance maintenant `ghcr.io/zaproxy/zaproxy@sha256:781a2bda…` (ZAP 2.17.0) et passe `-silent` à ZAP, que les deux scripts lisent pour
+  sauter la mise à jour. Une image absente du poste est un `SKIP` qui nomme la référence à tirer, sans repli sur `stable`.
+  `WEBSEC_DAST_IMAGE` désigne une autre image : sans empreinte ni version complète, le verdict le dit (`DAST-IMAGE-MOBILE`) et garde
+  l'identifiant local. Pour un ZAP natif, `synthese.balayage.maj_modules` dit que la mise à jour n'est pas maîtrisée.
+- **Liste des règles** : `referentiels/zap-regles.json` (56 noms du côté actif, 108 du côté passif, 7 add-ons) est lue dans l'image par
+  `scripts/lire-regles-zap.mjs`, sans réseau (deux conteneurs `--network none`). L'image porte DEUX versions de chaque add-on
+  (`ascanrules` 78 et 83, `pscanrules` 70 et 75, `domxss` 23 et 24…) : le script prend la plus haute et refuse d'écrire si les versions
+  que ZAP dit charger (`-cmd -silent -addonlist`) diffèrent, add-on par add-on. Une alerte dont le nom n'est pas dans la liste est
+  signalée (`DAST-REGLE-HORS-IMAGE`, info : jamais un changement de verdict) ; `Nom (variante)` est admis quand `Nom` est listé.
+- **Cause établie, et ce qui ne l'est pas** : la règle levée le 12/11/2026, « Source Code Disclosure - File Inclusion », n'est dans
+  aucun add-on de l'image ; le code de `zap-full-scan.py` (lu dans l'image) installe `ascanrulesBeta` depuis le réseau sauf `-silent`.
+  Que cette règle soit dans `ascanrulesBeta` n'est pas vérifié : ce module n'est pas dans l'image et n'a pas été téléchargé.
+- **Référentiel** : `wstg-cas.md` passe à 0.2.2, `oracle_dast: 0.2.1`, avec une section « Image et règles » et la source de la liste. La
+  barrière de TF-2460 a refusé l'ancien frontmatter (`oracle_dast: 0.2.0`) dès que l'oracle a changé de version : un FAIL constaté
+  au premier rejeu complet, puis corrigé.
+- **Image tirée ?** Non : l'image épinglée est la même que `stable` sur ce poste (empreinte lue, 3,71 Go, créée le 07/08/2026) ;
+  rien n'a été téléchargé. Un poste dont `stable` est plus récent doit `docker pull` la référence épinglée.
+- **Mesuré le 13/11/2026, avec le vrai ZAP, avant puis après** (`scripts/preuve-dast-actif.mjs`, mêmes trois scénarios, même cible de
+  fixture ; « avant » lu dans le journal de l'agent qui avait joué la preuve le 12/11 — rapporté, non rejoué ici) : le scénario passif A
+  passe de 240 s à 55 s puis 36 s (deux passes), le scénario actif B de 411 s à 138 s puis 142 s, le scénario actif C de 451 s à 217 s
+  puis 207 s. Les requêtes reçues par la cible en B passent de 958 à 661 puis 663, dont 659 sondes actives avant et 516 puis 517
+  après : la mise à jour coupée retire les règles bêta et le temps de démarrage. Les 16 assertions de la première passe tiennent ; la
+  seconde, qui ajoute « image épinglée et aucune alerte hors des règles de l'image » pour chaque scénario, en compte 19 : 19 PASS,
+  0 FAIL. `hors_liste` est vide aux trois balayages de la seconde passe : la règle « Source Code Disclosure - File Inclusion » levée
+  le 12/11/2026 ne l'est plus (le balayage actif B de la cible de fixture est le même qu'alors).
+- **Barrière** (classe `recette-verdict-non-prononcable`) : le self-test refuse une image par défaut qui n'est pas épinglée par
+  empreinte, une liste de règles qui décrit une autre image que celle de l'oracle (l'une ne change plus sans l'autre), un `-silent`
+  absent de la ligne de commande de l'image, et une alerte hors liste que l'oracle ne signale pas. La preuve réelle assertit en plus
+  qu'aucune alerte d'un balayage n'est hors de la liste.
+- **Banc** : 16 contrôles ajoutés, un Docker simulé (`fixtures/dast/docker-simule.mjs`, désigné par `WEBSEC_DAST_DOCKER`) qui enregistre
+  la ligne de commande sans lancer de conteneur, deux rapports de fixture (règle hors image, variante entre parenthèses) et la
+  variable `WEBSEC_DAST_REGLES` pour la liste illisible. Avant la correction, mêmes contrôles sur l'ancien oracle (PATH sans `docker`) :
+  239 PASS, 13 FAIL ; après : 252 PASS, 0 FAIL, 0 SKIP (236 PASS, 0 FAIL, 0 SKIP avant, même poste). Aucune assertion existante n'est
+  modifiée.
+- **Reste non prouvé** : l'image épinglée n'a servi qu'à des balayages de fixtures locales ; ZAP natif (non épinglé, mise à jour non
+  coupée) et application riche ou authentifiée restent hors preuve. Les règles bêta ne tournent plus sur la voie Docker : une cible
+  qui n'était couverte que par elles ne l'est plus.
+
 ## 2026-11-12 — `wstg-cas.md` 0.2.1 : le référentiel dit ce que le mode actif d'`oracle-dast` couvre, et sous quelle autorisation (TF-2460)
 
 - **Effet** : le référentiel écrivait qu'`oracle-dast` ne lève que ce qu'une passe passive voit, vrai jusqu'à la 0.1.x, faux depuis le

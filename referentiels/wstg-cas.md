@@ -1,12 +1,13 @@
 ---
-version: 0.2.1
+version: 0.2.2
 challenge_date: 2026-08-14
-oracle_dast: 0.2.0
+oracle_dast: 0.2.1
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
   - "OWASP Application Security Verification Standard (ASVS) 5.0.0 — mai 2025, CC BY-SA 4.0 — colonne de rattachement de ce document, via referentiels/asvs-l1.md"
   - "Noms des règles d'attaque active de ZAP 2.17.0 (modules ascanrules et domxss de l'image ghcr.io/zaproxy/zaproxy:stable), lus localement le 2026-11-12 dans leurs fichiers de messages, sans balayage ; alertes d'un balayage actif réel contre la cible de fixture locale du dépôt, même date — section « Ce que le mode actif d'oracle-dast couvre »"
+  - "Règles de l'image ZAP 2.17.0 épinglée par empreinte (ghcr.io/zaproxy/zaproxy@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef, créée le 2026-08-07), lues le 2026-11-13 sans réseau par scripts/lire-regles-zap.mjs et écrites dans referentiels/zap-regles.json : add-ons chargés vérifiés par ZAP lui-même (-addonlist)"
 ---
 
 # Référentiel — cas de test WSTG curés (méthode de test, sous-ensemble)
@@ -49,6 +50,12 @@ ne lève que ce qu'une passe passive voit. C'était exact jusqu'à `oracle-dast`
 son mode actif lance un balayage actif. La section « Ce que le mode actif d'oracle-dast couvre » dit ce qui
 change, cas par cas, et sous quelle autorisation. `oracle_dast` du frontmatter nomme la version d'oracle décrite :
 le self-test de la forge refuse ce fichier si cette version n'est plus celle de l'oracle.
+
+**Ajout du 13/11/2026 (0.2.2, TF-2477).** L'image ZAP d'`oracle-dast` suivait l'étiquette mobile `stable`, et ses règles
+changeaient sans que ce document le sache. L'oracle (0.2.1) lance maintenant l'image désignée par son empreinte et passe
+`-silent` à ZAP, qui coupe la mise à jour des modules au lancement. Les règles de cette image sont listées dans
+`referentiels/zap-regles.json`, que produit `scripts/lire-regles-zap.mjs` ; une alerte dont le nom n'y figure pas est
+signalée au verdict (`DAST-REGLE-HORS-IMAGE`). `oracle_dast` du frontmatter suit la version 0.2.1.
 
 **Colonne « Outillage »** : `oracle-exposition` | `oracle-sca` | `oracle-dast` | `manuel` —
 jamais inventée. Un cas confié à `oracle-dast` nomme toujours le mode qui le lève, `passif` ou `actif` :
@@ -154,6 +161,12 @@ des entrées altérées. Le mode passif, qui reste le défaut, lance `zap-baseli
 se rabat jamais sur l'autre : un ZAP de la mauvaise forme rend un `SKIP` (`DAST-ACTIF-IMPOSSIBLE`,
 `DAST-PASSIF-IMPOSSIBLE`) et rien n'est lancé.
 
+**Image et règles.** Sur la voie Docker, l'oracle lance `ghcr.io/zaproxy/zaproxy@sha256:781a2bda…` (ZAP 2.17.0) et lui passe
+`-silent`. Les règles qui tournent sont celles de l'image, lues le 13/11/2026 dans `referentiels/zap-regles.json` : 56 noms
+du côté actif (`ascanrules` 83, `domxss` 24), 108 du côté passif (`pscanrules` 75, `authhelper`, `retire`), surensemble des
+noms d'alerte. Un ZAP natif du poste n'est ni épinglé ni coupé de la mise à jour : le verdict le dit
+(`synthese.balayage.maj_modules`).
+
 **Autorisation exigée.** Le mode actif suit les conditions du mode passif, plus une. Un fichier d'autorisation
 écrit porte `autorisation_ecrite: true`, `mandat`, `proprietaire`, `environnement`, `cibles` et une `fenetre`
 datée en cours de validité ; l'origine de `--cible` figure à l'identique dans `cibles`, sans joker. Une cible en
@@ -177,9 +190,11 @@ jamais « tenu » : l'absence d'alerte ne dit rien du cas.
   borné à 50 par seconde, ZAP 2.17.0 par Docker), a levé quatre alertes `high` : « Cross Site Scripting (Reflected) » (INPV-01), « SQL Injection »
   (INPV-05), « Cross Site Scripting (DOM Based) » (CLNT-01, voir sa ligne) et « Source Code Disclosure - File
   Inclusion », puis trois alertes `medium` de configuration (CSP absente, HTTP seul, en-tête anti-clickjacking
-  absent). L'image ne porte aucune règle de ce dernier nom : le balayage a donc chargé des règles que l'image n'a pas
-  (cause non vérifiée, la mise à jour des modules au lancement est probable), et la liste des règles ci-dessus est
-  un minimum daté, pas la liste exacte d'un balayage.
+  absent). L'image ne porte aucune règle de ce dernier nom : le balayage a donc chargé des règles que l'image n'a pas.
+  La cause se lit dans le script de l'image : `zap-full-scan.py` lance `-addonupdate` puis installe `ascanrulesBeta`
+  (et `pscanrulesBeta` pour `zap-baseline.py`) depuis le réseau, sauf si `-silent` figure dans `-z`. Que cette règle
+  précise soit dans `ascanrulesBeta` n'est pas vérifié : ce module n'est pas dans l'image et n'a pas été téléchargé. Depuis
+  la 0.2.1 de l'oracle, la mise à jour est coupée et ces règles bêta ne tournent plus.
 - Les autres cas marqués actifs (ATHZ-01, INPV-02, -07, -11, -12, -19, CLNT-04, CONF-04) s'appuient sur le seul nom
   d'une règle installée : la forge ne les a jamais vus levés. Aucun balayage n'a visé une application riche ou
   authentifiée.

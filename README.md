@@ -207,13 +207,26 @@ par `--seuils <f.json>`.
 
 | Mode | Commande cherchée | Ce qui part vers la cible |
 |---|---|---|
-| `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker (`zap-baseline.py`) | l'araignée et les règles passives, aucune attaque |
-| `actif` (`actif_autorise: true`) | `zap-full-scan.py`, `zap.sh` ou `zap.bat`, sinon l'image Docker (`zap-full-scan.py`) | l'araignée, puis l'attaque active de chaque URL trouvée |
+| `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker épinglée (`zap-baseline.py`) | l'araignée et les règles passives, aucune attaque |
+| `actif` (`actif_autorise: true`) | `zap-full-scan.py`, `zap.sh` ou `zap.bat`, sinon l'image Docker épinglée (`zap-full-scan.py`) | l'araignée, puis l'attaque active de chaque URL trouvée |
 
 Un mode ne se rabat jamais sur l'autre (TF-2444). Un ZAP qui ne sait que `baseline` ne rend pas un
 « actif » : `SKIP` `DAST-ACTIF-IMPOSSIBLE`. Un ZAP qui attaque (`zap-full-scan.py`, ou le balayage
 rapide de `zap.sh` / `zap.bat`, dont l'aide de ZAP 2.17.0 dit « The URL to attack ») ne sert pas un
 « passif » : `SKIP` `DAST-PASSIF-IMPOSSIBLE`. Dans les deux cas rien n'est lancé.
+
+**L'image Docker est épinglée par empreinte** (TF-2477) : `ghcr.io/zaproxy/zaproxy@sha256:781a2bda…`, ZAP 2.17.0, et non
+l'étiquette mobile `stable`, dont les règles changeaient sans que la forge le sache. Une image absente du poste est un `SKIP`
+qui nomme la référence à tirer (`docker pull`) ; l'oracle ne se rabat pas sur `stable` et ne tire rien. `WEBSEC_DAST_IMAGE`
+désigne une autre image : sans empreinte ni version complète (`:2.17.0`), le verdict le dit (`DAST-IMAGE-MOBILE`, info) et consigne
+l'identifiant local de l'image qui a tourné. Sur cette voie l'oracle passe aussi `-silent` à ZAP : `zap-baseline.py` et
+`zap-full-scan.py` lancent sinon `-addonupdate` et installent `pscanrulesBeta` / `ascanrulesBeta` depuis le réseau, donc d'autres
+règles que celles de l'image, et ce démarrage coûtait plusieurs minutes. Les règles de l'image sont listées dans
+`referentiels/zap-regles.json` (lues sans réseau par `node scripts/lire-regles-zap.mjs --image <référence> --ecrire`, qui compare
+ses lectures aux add-ons que ZAP dit charger) ; une alerte dont le nom n'y figure pas est signalée (`DAST-REGLE-HORS-IMAGE`, info,
+jamais un changement de verdict). Un ZAP natif du poste n'est ni épinglé ni coupé de sa mise à jour : `synthese.balayage.maj_modules`
+le dit. Changer d'image se décide : relire ses règles, puis changer la constante `IMAGE_DEFAUT` et la liste dans le même commit — le
+self-test refuse l'écart.
 
 Le fichier d'autorisation porte aussi les limites du balayage, les mêmes dans les deux modes :
 
@@ -354,7 +367,7 @@ La preuve **avec le vrai ZAP** du mode actif est un banc à part, hors self-test
 node scripts/preuve-dast-actif.mjs [--oracle <oracle-dast.mjs>] [--debit 10] [--scenarios A,B,C]
 ```
 
-Il exige Docker et l'image `ghcr.io/zaproxy/zaproxy:stable` déjà présentes (sinon `SKIP` motivé, exit 2),
+Il exige Docker et l'image épinglée de l'oracle (`ghcr.io/zaproxy/zaproxy@sha256:781a2bda…`) déjà présentes (sinon `SKIP` motivé, exit 2),
 démarre `fixtures/dast/cible-locale.mjs` sur `127.0.0.1` et ne balaie rien d'autre. La preuve se lit au
 journal de la cible, pas au rapport de ZAP : A (passif) ne reçoit aucune sonde active, B (actif sans
 option) en reçoit et atteint la route que C (actif avec options) n'atteint jamais, avec l'en-tête sur
@@ -435,6 +448,7 @@ oracles/
   self-test.mjs           rejeu intégral à double sens (229 contrôles le 12/11/2026)
 scripts/
   preuve-dast-actif.mjs   banc réel du mode actif d'oracle-dast : vrai ZAP (Docker) contre la cible locale de fixture, hors self-test
+  lire-regles-zap.mjs     lit les règles de l'image ZAP épinglée (sans réseau) et écrit referentiels/zap-regles.json ; --verifier compare
   capturer.mjs            capture réelle fetch(url) → JSON d'entrée d'oracle-exposition
   caviarder-cookies.mjs   retire la valeur d'un Set-Cookie, nom et attributs gardés (appelé par capturer.mjs)
   caviarder-jetons.mjs    retire les jetons de l'URL (imbriquée ou encodée comprise), de Location, Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate, Authorization et Cookie, tout en-tête dont le nom contient token, key, secret, auth, session ou password, et la valeur de tout paramètre d'une URL portée par un en-tête (appelé par capturer.mjs)
@@ -443,14 +457,16 @@ referentiels/
   wstg-cas.md             méthode de test, 39 cas curés WSTG 4.2 rattachés à asvs-l1.md
   classes-attaque.md      classes d'attaque d'une revue de code, source Cloudflare (MIT), recoupées ASVS et WSTG
   revue-de-code.md        consigne, plafond par tranches et format du rapport d'une revue de code
+  zap-regles.json         règles actives et passives de l'image ZAP épinglée par oracle-dast, lues dans l'image (TF-2477)
 fixtures/
   exposition/             15 fixtures JSON (vertes + rouges) pour oracle-exposition
   exposition-statique/    8 fichiers _headers synthétiques : 1 vert, 7 rouges (EX par sonde, HD-1, HD-2)
   sca/                    manifestes npm/pip/uv/poetry synthétiques (vulnérables + propres) + cas SKIP, et outils/outil-simule.mjs (pip-audit et uvx simulés)
   dast/                   autorisations synthétiques (valide/expirée/production/incomplète, actif,
                           actif avec options), rapports ZAP synthétiques (propre/vulnérable), seuils
-                          desserrés, zap-simule.mjs (ZAP simulé du self-test) et cible-locale.mjs
-                          (la cible de fixture du banc réel)
+                          desserrés, zap-simule.mjs (ZAP simulé du self-test), docker-simule.mjs (Docker
+                          simulé : image présente ou non, ligne de commande enregistrée), deux rapports
+                          à règle hors image ou à variante, et cible-locale.mjs (la cible de fixture du banc réel)
   workflows/              workflows synthétiques : 2 verts, 9 rouges (une par règle au moins),
                           1 mineur, un dépôt fictif avec verrou actions.lock
 ```

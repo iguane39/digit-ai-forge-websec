@@ -46,6 +46,14 @@
 //   `debit_max_requetes_par_seconde` : un fil, un délai de ceil(1000/n) ms entre deux requêtes ;
 //   `exclusions` : chemins (« /deconnexion ») dont aucune requête ne part, préfixe compris.
 // Une option présente et mal formée est un refus (FAIL), jamais un balayage sans la limite.
+// Image ZAP épinglée (TF-2477) : la voie Docker lance une image désignée par son EMPREINTE (IMAGE_DEFAUT),
+// jamais par l'étiquette mobile `stable`, qui change de règles sans que le référentiel le sache ; et elle
+// passe `-silent` à ZAP, que zap-baseline.py et zap-full-scan.py lisent pour NE PAS lancer `-addonupdate` ni
+// installer pscanrulesBeta / ascanrulesBeta depuis le réseau. Les règles qui tournent sont alors celles de
+// l'image, listées dans referentiels/zap-regles.json ; une alerte dont le nom n'y figure pas est signalée
+// (DAST-REGLE-HORS-IMAGE, info). Une image désignée par WEBSEC_DAST_IMAGE sans empreinte ni version est dite
+// mobile au verdict (DAST-IMAGE-MOBILE) ; la mise à jour des modules d'un ZAP natif n'est pas maîtrisée, et
+// le verdict le consigne (synthese.balayage.maj_modules).
 // ZAP absent du poste → verdict SKIP MOTIVÉ (exit 2), jamais un PASS de complaisance : c'est
 // le chemin nominal sur un poste non équipé, et il est prouvé par fixture au self-test.
 //
@@ -59,8 +67,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -70,7 +79,9 @@ const NON_JUGE = [
   "tout ce qu'une passe passive ne voit pas : logique métier, autorisation/IDOR, chaînes d'exploitation multi-étapes, 0-day — une absence d'alerte n'est pas une absence de vulnérabilité",
   "la couverture réelle du parcours : les endpoints non atteints par le spider ZAP ne sont pas jugés (une cible authentifiée non configurée est explorée en surface seulement)",
   "l'exploitabilité et le tri des faux positifs : une alerte ZAP est un signal à qualifier par un humain, jamais un verdict d'exploitation",
-  "la fraîcheur des règles ZAP du poste (version des add-ons, base de règles) — non interrogée par cet oracle",
+  "la fraîcheur des règles d'un ZAP natif du poste (version des add-ons, base de règles) — non interrogée par cet oracle, qui ne coupe pas non plus sa mise à jour au lancement ; seule l'image Docker est épinglée et sans mise à jour (TF-2477)",
+  "les règles bêta (pscanrulesBeta, ascanrulesBeta) sur la voie Docker : elles ne sont pas dans l'image épinglée et la mise à jour qui les installait est coupée, elles ne tournent donc pas",
+  "la liste des règles de l'image (referentiels/zap-regles.json) : un surensemble des noms d'alerte, lu dans l'image par scripts/lire-regles-zap.mjs ; une alerte hors liste est signalée, une alerte dans la liste n'est pas pour autant prouvée émise par l'image",
   "la couche TLS (versions, suites, chaîne de certificat) — hors périmètre, cf. README §Limites",
   "la correction des alertes signalées — un constat, jamais un geste automatique",
   "l'exécution réelle sur une application riche et authentifiée : la preuve réelle (scripts/preuve-dast-actif.mjs) vise une cible de fixture locale de quelques routes, par l'image Docker de ZAP ; les formes natives (zap-baseline.py, zap-full-scan.py, zap.sh, zap.bat) ne sont prouvées que par un ZAP simulé qui enregistre sa ligne de commande (cf. README §Limites)",
@@ -239,7 +250,37 @@ function lireRapport(chemin) {
   return sites;
 }
 
-function jugerRapport(chemin, provenance) {
+// Règles de l'image épinglée (TF-2477) : referentiels/zap-regles.json, lu dans l'image par
+// scripts/lire-regles-zap.mjs. Un nom d'alerte absent de la liste n'est jamais une règle de cette image ;
+// « Nom (variante) » est admis quand « Nom » est listé (ZAP ajoute parfois une précision entre parenthèses).
+const REGLES_IMAGE = process.env.WEBSEC_DAST_REGLES || path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "referentiels", "zap-regles.json");
+function chargerReglesImage() {
+  try {
+    const j = JSON.parse(fs.readFileSync(REGLES_IMAGE, "utf8").replace(/^﻿/, ""));
+    const noms = new Set([j.actives, j.passives, j.autres].flatMap((g) => Object.values(g || {}).flat()));
+    if (!noms.size) return { erreur: "aucun nom de règle dans le fichier" };
+    return { image: j.image, noms };
+  } catch (e) { return { erreur: e.message }; }
+}
+function signalerReglesHorsImage(alertes, contexte) {
+  const liste = chargerReglesImage();
+  if (liste.erreur) {
+    add("info", "DAST-REGLES-ILLISIBLES", `liste des règles de l'image épinglée illisible (${REGLES_IMAGE} : ${liste.erreur}) : aucune alerte comparée, une règle levée hors de l'image ne serait pas signalée.`, REGLES_IMAGE);
+    synthese.zap.regles_image = { comparees: false, motif: liste.erreur };
+    return;
+  }
+  const connue = (nom) => liste.noms.has(nom) || [...liste.noms].some((n) => n.length >= 8 && nom.startsWith(`${n} (`));
+  const hors = [...new Set(alertes.map((a) => a.nom))].filter((nom) => !connue(nom)).sort();
+  const cause = contexte.imageEpinglee
+    ? "l'image épinglée ne porte pas cette règle : un module a été chargé hors de l'image, ou l'image qui a tourné n'est pas celle qui est listée"
+    : "ce rapport ne vient pas, ou pas avec certitude, de l'image épinglée (rapport fourni, ZAP natif ou autre image) : sa liste de règles peut différer";
+  for (const nom of hors) {
+    add("info", "DAST-REGLE-HORS-IMAGE", `alerte « ${nom} » absente de la liste des règles de l'image ZAP épinglée (${liste.image.zap}, ${liste.image.empreinte.slice(0, 19)}…) : ${cause}.`, REGLES_IMAGE);
+  }
+  synthese.zap.regles_image = { image: liste.image.reference, zap: liste.image.zap, comparees: true, alertes_comparees: new Set(alertes.map((a) => a.nom)).size, hors_liste: hors };
+}
+
+function jugerRapport(chemin, provenance, contexte = {}) {
   const sites = lireRapport(chemin);
   const compte = { high: 0, medium: 0, low: 0, informational: 0 };
   const alertes = [];
@@ -251,6 +292,7 @@ function jugerRapport(chemin, provenance) {
     }
   }
   synthese.zap = { provenance, rapport: chemin, sites: sites.length, alertes: compte };
+  signalerReglesHorsImage(alertes, contexte);
   for (const niveau of ["high", "medium", "low"]) {
     const seuil = seuils[niveau];
     if (typeof seuil !== "number") continue;
@@ -359,14 +401,24 @@ function resoluDansLePath(cmd) {
 // d'intégration, et sur un poste Windows c'est souvent la SEULE joignable — l'installation
 // native réclame un JRE, donc une élévation. L'image officielle porte `zap-baseline.py` ;
 // l'oracle ne la construit ni ne la télécharge JAMAIS : elle doit être déjà présente
-// (`docker pull ghcr.io/zaproxy/zaproxy:stable`), sans quoi un oracle « installerait » son
+// (`docker pull` de la référence ci-dessous), sans quoi un oracle « installerait » son
 // propre outillage à l'insu de l'appelant.
-const IMAGE_DEFAUT = "ghcr.io/zaproxy/zaproxy:stable";
+// TF-2477 : l'image est épinglée par EMPREINTE (ZAP 2.17.0, créée le 07/08/2026, lue sur ce poste), non par
+// l'étiquette mobile `stable` qui avait changé de règles sans que le référentiel le sache. Changer d'image
+// se décide : relire ses règles (`node scripts/lire-regles-zap.mjs --image <référence> --ecrire`), puis
+// changer cette constante et referentiels/zap-regles.json dans le même commit — le self-test refuse l'écart.
+const IMAGE_DEFAUT = "ghcr.io/zaproxy/zaproxy@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef";
+// Épinglée : par empreinte (`@sha256:…`) ou par version complète (`:2.17.0`), jamais par une étiquette mobile.
+const imageEpinglee = (ref) => /@sha256:[0-9a-f]{64}$/.test(ref) || /:\d+\.\d+\.\d+$/.test(ref);
+// WEBSEC_DAST_DOCKER : le banc désigne un Docker simulé (script .mjs, joué par node) ; sinon `docker`.
+const DOCKER = process.env.WEBSEC_DAST_DOCKER || "docker";
+const lancerDocker = (a, opts) => (/\.mjs$/i.test(DOCKER) ? spawnSync(process.execPath, [DOCKER, ...a], opts) : spawnSync(DOCKER, a, opts));
 
+// Rend null (image absente) ou l'identifiant local de l'image, lu sans la tirer.
 function imageDockerPresente(image) {
-  if (!resoluDansLePath("docker")) return false;
-  const r = spawnSync("docker", ["image", "inspect", image], { encoding: "utf8", timeout: 30000 });
-  return r.error === undefined && r.status === 0;
+  if (!resoluDansLePath(DOCKER)) return null;
+  const r = lancerDocker(["image", "inspect", image, "--format", "{{.Id}}"], { encoding: "utf8", timeout: 30000 });
+  return r.error === undefined && r.status === 0 ? (String(r.stdout || "").trim() || "(identifiant non lu)") : null;
 }
 
 // La FORME d'un ZAP se lit du nom de sa commande : baseline (passif), complet (araignée + attaque
@@ -396,7 +448,8 @@ function resoudreZap() {
   // de vrai. Garde posée le 14/08 en ajoutant la voie Docker.
   if (force) return null;
   const image = process.env.WEBSEC_DAST_IMAGE || IMAGE_DEFAUT;
-  if (imageDockerPresente(image)) return { mode: "docker", cmd: "docker", image, forme: mode === "actif" ? "complet" : "baseline" };
+  const idLocal = imageDockerPresente(image);
+  if (idLocal) return { mode: "docker", cmd: DOCKER, image, idLocal, forme: mode === "actif" ? "complet" : "baseline" };
   return null;
 }
 
@@ -405,8 +458,8 @@ if (!zap) {
   const ou = process.env.WEBSEC_DAST_ZAP
     ? `commande déclarée dans WEBSEC_DAST_ZAP (« ${process.env.WEBSEC_DAST_ZAP} ») injouable`
     : (mode === "actif"
-      ? "aucun de zap-full-scan.py / zap.sh / zap.bat dans le PATH, et aucune image Docker ZAP présente"
-      : "zap-baseline.py absent du PATH, et aucune image Docker ZAP présente");
+      ? `aucun de zap-full-scan.py / zap.sh / zap.bat dans le PATH, et l'image Docker ZAP « ${process.env.WEBSEC_DAST_IMAGE || IMAGE_DEFAUT} » absente du poste`
+      : `zap-baseline.py absent du PATH, et l'image Docker ZAP « ${process.env.WEBSEC_DAST_IMAGE || IMAGE_DEFAUT} » absente du poste`);
   add("info", "DAST-SKIP", `ZAP absent de ce poste — ${ou}. Aucun scan lancé, aucun verdict rendu : SKIP motivé, jamais un PASS par défaut. Cet oracle n'installe jamais ZAP ; installer ZAP (ou « docker pull ${IMAGE_DEFAUT} ») puis relancer, ou juger un rapport déjà produit avec --rapport <fichier.json>.`, origineCible);
   if (mode === "passif" && !process.env.WEBSEC_DAST_ZAP && (resoluDansLePath("zap.sh") || resoluDansLePath("zap.bat"))) {
     add("info", "DAST-PASSIF-IMPOSSIBLE", "zap.sh / zap.bat est présent, mais son balayage rapide (-quickurl) ATTAQUE la cible : il n'est pas admis en mode passif. Une passe passive exige zap-baseline.py ou l'image Docker ; l'attaque exige `--mode actif` et `actif_autorise: true`.", origineCible);
@@ -439,6 +492,9 @@ const sortieRapport = path.join(dossierTravail, nomRapport);
 const citer = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 const optionsScript = optionsZapListe.length ? ["-z", optionsZapListe.map((o) => `-config ${citer(o)}`).join(" ")] : [];
 const scriptDocker = mode === "actif" ? "zap-full-scan.py" : "zap-baseline.py";
+// Voie Docker (TF-2477) : `-silent` coupe la mise à jour des modules au lancement (-addonupdate et installation
+// des add-ons bêta, que zap-baseline.py et zap-full-scan.py sautent quand `-silent` figure dans -z).
+const optionsDocker = ["-z", ["-silent", ...optionsZapListe.map((o) => `-config ${citer(o)}`)].join(" ")];
 
 let commande = zap.cmd;
 let argv;
@@ -447,7 +503,7 @@ if (zap.mode === "docker") {
   // du poste, et le rapport en ressort par le montage. `--rm` : aucun conteneur ne survit.
   argv = [
     "run", "--rm", "-v", `${dossierTravail}:/zap/wrk:rw`, zap.image,
-    scriptDocker, "-t", cible, "-J", nomRapport, "-I", ...optionsScript,
+    scriptDocker, "-t", cible, "-J", nomRapport, "-I", ...optionsDocker,
   ];
 } else if (zap.forme === "rapide") {
   argv = ["-cmd", ...optionsZapListe.flatMap((o) => ["-config", o]), "-quickurl", cible, "-quickout", sortieRapport];
@@ -459,6 +515,16 @@ if (/\.mjs$/i.test(zap.cmd)) { argv = [zap.cmd, ...argv]; commande = process.exe
 const commandeLisible = zap.mode === "docker" ? `docker run ${zap.image} ${scriptDocker}` : zap.cmd;
 synthese.balayage.forme = zap.forme;
 synthese.balayage.commande = commandeLisible;
+if (zap.mode === "docker") {
+  const epinglee = imageEpinglee(zap.image);
+  synthese.balayage.image = { reference: zap.image, epinglee, id_local: zap.idLocal };
+  synthese.balayage.maj_modules = "coupée : -silent passé à ZAP, les règles sont celles de l'image";
+  if (!epinglee) {
+    add("info", "DAST-IMAGE-MOBILE", `image ZAP « ${zap.image} » désignée par une étiquette mobile (WEBSEC_DAST_IMAGE) : ses règles peuvent changer sans que referentiels/zap-regles.json le sache. Identifiant local de l'image qui a tourné : ${zap.idLocal}. Épingler par empreinte (@sha256:…) ou par version complète (:2.17.0).`, origineCible);
+  }
+} else {
+  synthese.balayage.maj_modules = "non maîtrisée : ZAP natif du poste, dont l'oracle ne coupe pas la mise à jour des modules au lancement";
+}
 const r = spawnSync(commande, argv, { encoding: "utf8", timeout: 1800000, shell: false });
 if (!fs.existsSync(sortieRapport)) {
   const extrait = masquer(String(r.stderr || r.stdout || "")).slice(0, 300).trim();
@@ -466,4 +532,4 @@ if (!fs.existsSync(sortieRapport)) {
   synthese.zap = { provenance: `exécution ${commandeLisible} en échec`, rapport: null };
   sortir("SKIP", 2);
 }
-jugerRapport(sortieRapport, `exécution ${commandeLisible} (mode ${mode}) sur cible autorisée`);
+jugerRapport(sortieRapport, `exécution ${commandeLisible} (mode ${mode}) sur cible autorisée`, { imageEpinglee: zap.mode === "docker" && zap.image === IMAGE_DEFAUT });

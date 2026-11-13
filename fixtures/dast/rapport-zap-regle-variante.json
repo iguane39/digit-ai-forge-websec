@@ -1,0 +1,27 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens VERT de TF-2477 : rapport ZAP au format JSON dont l'unique alerte, informational, porte un nom à variante entre parenthèses (« Charset Mismatch (Header Versus Meta Content-Type Charset) ») que ZAP bâtit sur une règle listée par l'image (« Charset Mismatch »). oracle-dast ne la signale pas comme hors image. Cible fictive (exemple.tld, RFC 2606) ; aucun scan réel n'a produit ce fichier.",
+  "@programName": "ZAP",
+  "@version": "2.17.0",
+  "@generated": "Fri, 13 Nov 2026 09:00:00",
+  "site": [
+    {
+      "@name": "https://recette.exemple.tld",
+      "@host": "recette.exemple.tld",
+      "@port": "443",
+      "@ssl": "true",
+      "alerts": [
+        {
+          "pluginid": "90011",
+          "alertRef": "90011",
+          "alert": "Charset Mismatch (Header Versus Meta Content-Type Charset)",
+          "name": "Charset Mismatch (Header Versus Meta Content-Type Charset)",
+          "riskcode": "0",
+          "confidence": "1",
+          "riskdesc": "Informational (Low)",
+          "count": "1",
+          "instances": [{ "uri": "https://recette.exemple.tld/", "method": "GET" }]
+        }
+      ]
+    }
+  ]
+}

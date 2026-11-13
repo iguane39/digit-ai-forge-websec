@@ -31,7 +31,8 @@ const ORACLE = path.resolve(opt("--oracle", path.join(ICI, "..", "oracles", "ora
 const CIBLE = path.join(ICI, "..", "fixtures", "dast", "cible-locale.mjs");
 const DEBIT = Number(opt("--debit", "10"));
 const SCENARIOS = opt("--scenarios", "A,B,C").split(",");
-const IMAGE = process.env.WEBSEC_DAST_IMAGE || "ghcr.io/zaproxy/zaproxy:stable";
+// Même image que l'oracle : épinglée par empreinte (TF-2477), lue dans l'oracle jugé, jamais l'étiquette stable.
+const IMAGE = process.env.WEBSEC_DAST_IMAGE || (fs.readFileSync(ORACLE, "utf8").match(/const IMAGE_DEFAUT = "([^"]+)"/) || [])[1];
 const log = (m) => process.stderr.write(`[${new Date().toISOString().slice(11, 19)}] ${m}\n`);
 
 const docker = spawnSync("docker", ["image", "inspect", IMAGE], { encoding: "utf8", timeout: 30000 });
@@ -117,13 +118,15 @@ for (const nom of SCENARIOS) {
   p.kill();
   let verdict = null, synthese = null;
   try { const j = JSON.parse(b.texte); verdict = j.verdict; synthese = j.synthese; } catch { /* sortie illisible, dite plus bas */ }
-  resultats[nom] = { ...plan, oracle_exit: b.code, oracle_duree_s: b.duree_s, verdict, forme: synthese && synthese.balayage && synthese.balayage.forme, valeur_en_tete_dans_la_sortie: b.texte.includes(ACCES), cible: mesurer(lireJournal(journal)) };
+  resultats[nom] = { ...plan, oracle_exit: b.code, oracle_duree_s: b.duree_s, verdict, forme: synthese && synthese.balayage && synthese.balayage.forme, image_epinglee: synthese && synthese.balayage && synthese.balayage.image ? synthese.balayage.image.epinglee : null, regles_hors_liste: synthese && synthese.zap && synthese.zap.regles_image ? synthese.zap.regles_image.hors_liste : null, valeur_en_tete_dans_la_sortie: b.texte.includes(ACCES), cible: mesurer(lireJournal(journal)) };
   log(`scénario ${nom} fini en ${b.duree_s} s : verdict ${verdict}, ${JSON.stringify(resultats[nom].cible)}`);
 }
 
 const assertions = [];
 const ok = (cond, texte) => assertions.push({ ok: Boolean(cond), texte });
 const A = resultats.A?.cible, B = resultats.B?.cible, C = resultats.C?.cible;
+// TF-2477 : l'image est épinglée, sa mise à jour de modules coupée, et aucune alerte levée n'est une règle hors de l'image.
+for (const nom of Object.keys(resultats)) ok(resultats[nom].image_epinglee === true && Array.isArray(resultats[nom].regles_hors_liste) && resultats[nom].regles_hors_liste.length === 0, `${nom} : image épinglée, et aucune alerte hors des règles de l'image (hors liste : ${JSON.stringify(resultats[nom].regles_hors_liste)})`);
 for (const nom of Object.keys(resultats)) ok(!resultats[nom].valeur_en_tete_dans_la_sortie, `${nom} : la valeur de l'en-tête n'apparaît pas dans la sortie de l'oracle`);
 if (A) {
   ok(A.requetes > 0, "A passif : la cible a reçu la passe d'araignée");

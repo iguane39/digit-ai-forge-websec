@@ -1,0 +1,38 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens ROUGE de TF-2477 : rapport ZAP au format JSON dont une alerte high, « Source Code Disclosure - File Inclusion », porte le nom d'une règle que l'image ZAP épinglée ne contient pas (règle bêta installée par la mise à jour des modules au lancement, mesurée le 12/11/2026). oracle-dast la signale (DAST-REGLE-HORS-IMAGE) en plus du seuil. Cible fictive (exemple.tld, RFC 2606) ; aucun scan réel n'a produit ce fichier.",
+  "@programName": "ZAP",
+  "@version": "2.17.0",
+  "@generated": "Fri, 13 Nov 2026 09:00:00",
+  "site": [
+    {
+      "@name": "https://recette.exemple.tld",
+      "@host": "recette.exemple.tld",
+      "@port": "443",
+      "@ssl": "true",
+      "alerts": [
+        {
+          "pluginid": "43",
+          "alertRef": "43",
+          "alert": "Source Code Disclosure - File Inclusion",
+          "name": "Source Code Disclosure - File Inclusion",
+          "riskcode": "3",
+          "confidence": "2",
+          "riskdesc": "High (Medium)",
+          "count": "1",
+          "instances": [{ "uri": "https://recette.exemple.tld/fichier?nom=marqueur", "method": "GET" }]
+        },
+        {
+          "pluginid": "10015",
+          "alertRef": "10015",
+          "alert": "Re-examine Cache-control Directives",
+          "name": "Re-examine Cache-control Directives",
+          "riskcode": "0",
+          "confidence": "1",
+          "riskdesc": "Informational (Low)",
+          "count": "1",
+          "instances": [{ "uri": "https://recette.exemple.tld/", "method": "GET" }]
+        }
+      ]
+    }
+  ]
+}

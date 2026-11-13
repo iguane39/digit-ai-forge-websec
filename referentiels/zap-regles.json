@@ -1,0 +1,297 @@
+{
+  "schema": 1,
+  "_usage": "Données lues dans l'image ZAP épinglée par oracle-dast, jamais saisies à la main : les produit `node scripts/lire-regles-zap.mjs --image <référence> --ecrire` et les contrôle le self-test. Les listes sont un SURENSEMBLE des noms d'alerte (libellés d'interface compris) : un nom absent n'est pas une règle de l'image, un nom présent n'en prouve pas l'alerte.",
+  "image": {
+    "reference": "ghcr.io/zaproxy/zaproxy@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef",
+    "empreinte": "sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef",
+    "id_local": "sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef",
+    "creee": "2026-08-07T14:58:54Z",
+    "zap": "2.17.0"
+  },
+  "lu_le": "2026-11-13",
+  "lecture": "docker run --rm --network none --entrypoint python3 <image> -c <lecture des zip de /zap/plugin> ; contre-lecture par docker run --rm --network none --entrypoint /zap/zap.sh <image> -cmd -silent -addonlist (versions chargées identiques, add-on par add-on)",
+  "modules": [
+    {
+      "id": "ascanrules",
+      "version": "83",
+      "statut": "release",
+      "versions_presentes": [
+        "78",
+        "83"
+      ],
+      "classe": "actives",
+      "noms": 55
+    },
+    {
+      "id": "authhelper",
+      "version": "0.41.0",
+      "statut": "beta",
+      "versions_presentes": [
+        "0.34.0",
+        "0.41.0"
+      ],
+      "classe": "passives",
+      "noms": 12
+    },
+    {
+      "id": "domxss",
+      "version": "24",
+      "statut": "release",
+      "versions_presentes": [
+        "23",
+        "24"
+      ],
+      "classe": "actives",
+      "noms": 1
+    },
+    {
+      "id": "pscanrules",
+      "version": "75",
+      "statut": "release",
+      "versions_presentes": [
+        "70",
+        "75"
+      ],
+      "classe": "passives",
+      "noms": 93
+    },
+    {
+      "id": "retire",
+      "version": "0.63.0",
+      "statut": "release",
+      "versions_presentes": [
+        "0.52.0",
+        "0.63.0"
+      ],
+      "classe": "passives",
+      "noms": 3
+    },
+    {
+      "id": "scripts",
+      "version": "45.20.0",
+      "statut": "release",
+      "versions_presentes": [
+        "45.17.0",
+        "45.20.0"
+      ],
+      "classe": "autres",
+      "noms": 8
+    },
+    {
+      "id": "soap",
+      "version": "31",
+      "statut": "beta",
+      "versions_presentes": [
+        "29",
+        "31"
+      ],
+      "classe": "autres",
+      "noms": 6
+    }
+  ],
+  "actives": {
+    "ascanrules": [
+      ".env Information Leak",
+      ".htaccess Information Leak",
+      "Buffer Overflow",
+      "CRLF Injection",
+      "Cloud Metadata Potentially Exposed",
+      "Cross Site Scripting (Persistent)",
+      "Cross Site Scripting (Persistent) - Prime",
+      "Cross Site Scripting (Persistent) - Spider",
+      "Cross Site Scripting (Reflected)",
+      "Cross Site Scripting Weakness (Persistent in JSON Response)",
+      "Cross Site Scripting Weakness (Reflected in JSON Response)",
+      "Directory Browsing",
+      "ELMAH Information Leak",
+      "Exponential Entity Expansion (Billion Laughs Attack)",
+      "External Redirect",
+      "Format String Error",
+      "GET for POST",
+      "Generic Padding Oracle",
+      "HTTP Only Site",
+      "HTTPS Content Available via HTTP",
+      "Heartbleed OpenSSL Vulnerability",
+      "Hidden File Finder",
+      "Hidden File Found",
+      "Log4Shell",
+      "Log4Shell (CVE-2021-44228)",
+      "Log4Shell (CVE-2021-45046)",
+      "Parameter Tampering",
+      "Path Traversal",
+      "Properties File Disclosure - /WEB-INF folder",
+      "Remote Code Execution (React2Shell)",
+      "Remote Code Execution - CVE-2012-1823",
+      "Remote Code Execution - Shell Shock",
+      "Remote File Inclusion",
+      "Remote OS Command Injection",
+      "Remote OS Command Injection (Time Based)",
+      "SQL Injection",
+      "SQL Injection - Authentication Bypass",
+      "SQL Injection - Hypersonic SQL (Time Based)",
+      "SQL Injection - MsSQL (Time Based)",
+      "SQL Injection - MySQL (Time Based)",
+      "SQL Injection - Oracle (Time Based)",
+      "SQL Injection - PostgreSQL (Time Based)",
+      "Server Side Code Injection",
+      "Server Side Include",
+      "Server Side Template Injection",
+      "Server Side Template Injection (Blind)",
+      "Source Code Disclosure - /WEB-INF Folder",
+      "Source Code Disclosure - CVE-2012-1823",
+      "Spring Actuator Information Leak",
+      "Spring4Shell",
+      "Trace.axd Information Leak",
+      "User Agent Fuzzer",
+      "XML External Entity Attack",
+      "XPath Injection",
+      "XSLT Injection"
+    ],
+    "domxss": [
+      "Cross Site Scripting (DOM Based)"
+    ]
+  },
+  "passives": {
+    "authhelper": [
+      "AJAX Spider Browser Based Authentication Support",
+      "Authentication Helper Automation",
+      "Authentication Helper Reports",
+      "Authentication Request Identified",
+      "Auto-Detect Authentication",
+      "Auto-Detect Session Management",
+      "Browser-based Authentication",
+      "Client Script Authentication",
+      "Client Spider Browser Based Authentication Support",
+      "Header-based Session Management",
+      "Session Management Response Identified",
+      "Verification Request Identified"
+    ],
+    "pscanrules": [
+      "Absence of Anti-CSRF Tokens",
+      "Anti-clickjacking Header",
+      "Application Error Disclosure",
+      "Authentication Credentials Captured",
+      "Big Redirect Detected (Potential Sensitive Information Leak)",
+      "CSP",
+      "Charset Mismatch",
+      "Content Security Policy (CSP) Header Not Set",
+      "Content Security Policy (CSP) Report-Only Header Found",
+      "Content-Type Header Missing",
+      "Cookie No HttpOnly Flag",
+      "Cookie Poisoning",
+      "Cookie Without Secure Flag",
+      "Cookie with Invalid SameSite Attribute",
+      "Cookie with SameSite Attribute None",
+      "Cookie without SameSite Attribute",
+      "Cross-Domain JavaScript Source File Inclusion",
+      "Cross-Domain Misconfiguration",
+      "Directory Browsing",
+      "Emails Found in the Viewstate",
+      "Failure to Define Directive with No Fallback",
+      "HTTP Server Response Header",
+      "HTTP to HTTPS Insecure Transition in Form Post",
+      "HTTPS to HTTP Insecure Transition in Form Post",
+      "Hash Disclosure",
+      "Header & Meta",
+      "Heartbleed OpenSSL Vulnerability (Indicative)",
+      "In Page Banner Information Leak",
+      "Information Disclosure - Debug Error Messages",
+      "Information Disclosure - Sensitive Information in HTTP Referrer Header",
+      "Information Disclosure - Sensitive Information in URL",
+      "Information Disclosure - Suspicious Comments",
+      "Insecure JSF ViewState",
+      "Java Serialization Object",
+      "Loosely Scoped Cookie",
+      "Malformed Policy (Non-ASCII)",
+      "Meta Policy Invalid Directive",
+      "Missing Anti-clickjacking Header",
+      "Modern Web Application",
+      "Multiple HREFs Redirect Detected (Potential Sensitive Information Leak)",
+      "Multiple X-Frame-Options Header Entries",
+      "Notices",
+      "Obsolete Content Security Policy (CSP) Header Found",
+      "Off-site Redirect",
+      "Old Asp.Net Version in Use",
+      "PII Disclosure",
+      "Potential IP Addresses Found in the Viewstate",
+      "Private IP Disclosure",
+      "Re-examine Cache-control Directives",
+      "Retrieved from Cache",
+      "Reverse Tabnabbing",
+      "Script Served From Malicious Domain (polyfill)",
+      "Secure Pages Include Mixed Content",
+      "Server Leaks Information via \"X-Powered-By\" HTTP Response Header Field(s)",
+      "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+      "Server Leaks its Webserver Application via \"Server\" HTTP Response Header Field",
+      "Session ID in URL Rewrite",
+      "Split Viewstate in Use",
+      "Strict-Transport-Security Defined via META (Non-compliant with Spec)",
+      "Strict-Transport-Security Disabled",
+      "Strict-Transport-Security Header",
+      "Strict-Transport-Security Header Not Set",
+      "Strict-Transport-Security Header on Plain HTTP Response",
+      "Strict-Transport-Security Malformed Content (Non-compliant with Spec)",
+      "Strict-Transport-Security Max-Age Malformed (Non-compliant with Spec)",
+      "Strict-Transport-Security Missing Max-Age (Non-compliant with Spec)",
+      "Strict-Transport-Security Multiple Header Entries (Non-compliant with Spec)",
+      "Sub Resource Integrity Attribute Missing",
+      "Timestamp Disclosure",
+      "User Controllable Charset",
+      "User Controllable HTML Element Attribute (Potential XSS)",
+      "User Controllable JavaScript Event (XSS)",
+      "Username Hash Found",
+      "Viewstate",
+      "Viewstate without MAC Signature (Sure)",
+      "Viewstate without MAC Signature (Unsure)",
+      "Weak Authentication Method",
+      "Wildcard Directive",
+      "X-AspNet-Version Response Header",
+      "X-Backend-Server Header Information Leak",
+      "X-ChromeLogger-Data (XCOLD) Header Information Leak",
+      "X-Content-Security-Policy",
+      "X-Content-Type-Options Header Missing",
+      "X-Debug-Token Information Leak",
+      "X-Frame-Options Defined via META (Non-compliant with Spec)",
+      "X-Frame-Options Setting Malformed",
+      "X-WebKit-CSP",
+      "ZAP is Out of Date",
+      "script-src unsafe-eval",
+      "script-src unsafe-hashes",
+      "script-src unsafe-inline",
+      "style-src unsafe-hashes",
+      "style-src unsafe-inline"
+    ],
+    "retire": [
+      "Retire.js",
+      "Vulnerable JS Library",
+      "Vulnerable JS Library (Powered by Retire.js)"
+    ]
+  },
+  "autres": {
+    "scripts": [
+      "Copy of {0}",
+      "Name:",
+      "Script Active Scan Rules",
+      "Script Console Report Data",
+      "Script Name:",
+      "Script Passive Scan Rules",
+      "Scripts Automation Framework Integration",
+      "You must supply a script name"
+    ],
+    "soap": [
+      "Job Name:",
+      "SOAP Action Spoofing",
+      "SOAP Automation",
+      "SOAP Spider",
+      "SOAP XML Injection",
+      "WSDL File Detection"
+    ]
+  },
+  "absents_de_l_image": {
+    "modules": [
+      "ascanrulesBeta",
+      "pscanrulesBeta"
+    ],
+    "note": "zap-baseline.py et zap-full-scan.py lancent `-addonupdate` puis `-addoninstall pscanrulesBeta` (et `ascanrulesBeta` pour le balayage complet) sauf si les options ZAP portent `-silent` : ces deux add-ons ne sont pas dans l'image, ils viennent du réseau au lancement, et leurs règles sont donc hors de ces listes. oracle-dast passe `-silent` à l'image (TF-2477)."
+  }
+}

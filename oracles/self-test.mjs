@@ -1302,5 +1302,112 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2394 : en-têtes à n
   ok(sansMode !== reel && defautsWstgDast(sansMode).some((d) => /WSTG-INPV-05 cite oracle-dast sans nommer son mode/.test(d)), "TF-2460 · ROUGE — un cas confié à oracle-dast sans mode nommé est refusé");
 }
 
+// ── TF-2477 · l'image ZAP est épinglée, la mise à jour des modules est coupée, les règles sont listées ─────
+// Classe recette-verdict-non-prononcable : le 12/11/2026, un balayage a levé une alerte high (« Source Code
+// Disclosure - File Inclusion ») dont aucune extension de l'image n'avait la règle. L'image suivait l'étiquette
+// mobile `stable`, et zap-baseline.py / zap-full-scan.py lancent `-addonupdate` puis installent pscanrulesBeta
+// et ascanrulesBeta depuis le réseau sauf si `-silent` figure dans -z. Un Docker SIMULÉ (docker-simule.mjs,
+// désigné par WEBSEC_DAST_DOCKER) enregistre la ligne de commande et ne lance aucun conteneur.
+{
+  const source = fs.readFileSync(ORACLE_DAST, "utf8");
+  const imageEpinglee = (source.match(/const IMAGE_DEFAUT = "([^"]+)"/) || [])[1] || "";
+  const regles = JSON.parse(fs.readFileSync(path.join(HERE, "..", "referentiels", "zap-regles.json"), "utf8"));
+  ok(/^ghcr\.io\/zaproxy\/zaproxy@sha256:[0-9a-f]{64}$/.test(imageEpinglee), `TF-2477 · l'image par défaut d'oracle-dast est épinglée par empreinte, pas par étiquette (obtenu « ${imageEpinglee} »)`);
+  ok(regles.image && regles.image.reference === imageEpinglee, "TF-2477 · referentiels/zap-regles.json décrit l'image par défaut d'oracle-dast (même référence, même empreinte) : changer l'une sans l'autre est refusé");
+  const nbActives = Object.values(regles.actives || {}).flat().length;
+  const nbPassives = Object.values(regles.passives || {}).flat().length;
+  ok(nbActives >= 40 && nbPassives >= 60 && (regles.modules || []).every((m) => m.versions_presentes.includes(m.version)),
+    `TF-2477 · la liste des règles porte des noms actifs (${nbActives}) et passifs (${nbPassives}) et, pour chaque add-on, la version chargée parmi celles de l'image`);
+
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), "websec-dast-image-"));
+  const dockerSimule = path.join(dossier, "docker-simule.mjs");
+  fs.copyFileSync(AUTZ("zap-simule.mjs"), path.join(dossier, "zap-baseline.mjs"));
+  fs.copyFileSync(FX("dast", "docker-simule.mjs"), dockerSimule);
+  const trace = path.join(dossier, "trace.jsonl");
+  const zapNatifAuPath = ["zap-baseline.py", "zap-full-scan.py"].some((c) => spawnSync(process.platform === "win32" ? "where" : "sh", process.platform === "win32" ? [c] : ["-c", `command -v ${c}`], { encoding: "utf8" }).status === 0);
+  const lancerDocker = (images, env, mode = "passif", autz = "autorisation-valide.json", rapport = "rapport-zap-propre.json") => {
+    fs.rmSync(trace, { force: true });
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ(autz), "--mode", mode], {
+      WEBSEC_DAST_ZAP: "", WEBSEC_DAST_IMAGE: "", WEBSEC_DAST_DOCKER: dockerSimule, WEBSEC_DAST_SIMULE_IMAGES: images.join(","),
+      WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ(rapport), ...(env || {}),
+    });
+    const lignes = fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+    return { r, run: lignes.filter((l) => l.argv[0] === "run") };
+  };
+  const optionsZ = (run) => { const a = (run[0] && run[0].argv) || []; const i = a.indexOf("-z"); return i >= 0 ? a[i + 1] : ""; };
+  if (zapNatifAuPath) {
+    skipNote("TF-2477 · un ZAP natif (zap-baseline.py ou zap-full-scan.py) figure dans le PATH de ce poste : la voie Docker simulée ne peut pas être isolée, ses cas ne sont pas joués");
+  } else {
+    // sens VERT : l'image épinglée est celle qui part, sans mise à jour de modules
+    {
+      const { r, run } = lancerDocker([imageEpinglee]);
+      const a = (run[0] && run[0].argv) || [];
+      ok(r.verdict === "PASS" && run.length === 1 && a.includes(imageEpinglee) && a.includes("zap-baseline.py") && !a.some((x) => /:stable$/.test(x)),
+        `TF-2477 · VERT — voie Docker sans réglage : l'image épinglée par empreinte part, une fois, jamais l'étiquette stable (obtenu ${r.verdict}, ${run.length} lancement)`);
+      ok(/^-silent( |$)/.test(optionsZ(run)) && r.synthese?.balayage?.image?.epinglee === true && /^coupée/.test(r.synthese?.balayage?.maj_modules),
+        "TF-2477 · VERT — `-silent` est passé à ZAP (mise à jour des modules coupée) et le verdict le consigne, image épinglée = oui");
+      ok(!aRegle(r, "DAST-IMAGE-MOBILE") && !aRegle(r, "DAST-REGLE-HORS-IMAGE") && r.synthese?.zap?.regles_image?.comparees === true,
+        "TF-2477 · VERT — image épinglée et alertes toutes listées : ni DAST-IMAGE-MOBILE ni DAST-REGLE-HORS-IMAGE");
+    }
+    {
+      const { r, run } = lancerDocker([imageEpinglee], { WEBSEC_DAST_TEST_ACCES: "Bearer fixture-image" }, "actif", "autorisation-actif-options.json");
+      ok(r.verdict === "PASS" && run.length === 1 && run[0].argv.includes("zap-full-scan.py") && /^-silent -config /.test(optionsZ(run)) && optionsZ(run).includes("scanner.delayInMs=200"),
+        `TF-2477 · VERT — en mode actif, -silent précède les options du mandat dans -z, qui les porte toujours (obtenu ${r.verdict})`);
+    }
+    // sens ROUGE : l'étiquette mobile, désignée par l'opérateur, est dite au verdict ; elle n'est jamais le défaut
+    {
+      const { r, run } = lancerDocker(["ghcr.io/zaproxy/zaproxy:stable"], { WEBSEC_DAST_IMAGE: "ghcr.io/zaproxy/zaproxy:stable" });
+      ok(r.verdict === "PASS" && run.length === 1 && aRegle(r, "DAST-IMAGE-MOBILE") && r.synthese?.balayage?.image?.epinglee === false && /^-silent/.test(optionsZ(run)),
+        `TF-2477 · ROUGE — une image désignée par l'étiquette stable est dite mobile (DAST-IMAGE-MOBILE) et son identifiant local est consigné, -silent reste passé (obtenu ${r.verdict})`);
+    }
+    {
+      const { r } = lancerDocker(["ghcr.io/zaproxy/zaproxy:2.17.0"], { WEBSEC_DAST_IMAGE: "ghcr.io/zaproxy/zaproxy:2.17.0" });
+      ok(r.verdict === "PASS" && !aRegle(r, "DAST-IMAGE-MOBILE") && r.synthese?.balayage?.image?.epinglee === true, "TF-2477 · VERT — une version complète (:2.17.0) vaut épinglage : aucune alerte d'étiquette mobile");
+    }
+    {
+      const { r, run } = lancerDocker(["ghcr.io/zaproxy/zaproxy:stable"]);
+      ok(r.verdict === "SKIP" && aRegle(r, "DAST-SKIP") && run.length === 0 && (r.findings || []).some((f) => f.msg.includes(imageEpinglee)),
+        `TF-2477 · ROUGE — image épinglée absente du poste alors que stable y est : SKIP qui nomme la référence à tirer, aucun repli sur stable, rien de lancé (obtenu ${r.verdict}, ${run.length} lancement)`);
+    }
+    // règles : une alerte hors de la liste de l'image est signalée, par exécution comme par rapport fourni
+    {
+      const { r } = lancerDocker([imageEpinglee], {}, "passif", "autorisation-valide.json", "rapport-zap-regle-levee.json");
+      const f = (r.findings || []).find((x) => x.regle === "DAST-REGLE-HORS-IMAGE");
+      ok(r.verdict === "FAIL" && aRegle(r, "DAST-SEUIL") && f && /Source Code Disclosure - File Inclusion/.test(f.msg) && /image épinglée ne porte pas cette règle/.test(f.msg)
+        && JSON.stringify(r.synthese?.zap?.regles_image?.hors_liste) === JSON.stringify(["Source Code Disclosure - File Inclusion"]),
+        `TF-2477 · ROUGE — une règle levée hors de l'image (« Source Code Disclosure - File Inclusion ») est signalée, nommée, et le seuil la juge (obtenu ${r.verdict})`);
+    }
+    {
+      const { r } = lancerDocker([imageEpinglee], {}, "passif", "autorisation-valide.json", "rapport-zap-regle-variante.json");
+      ok(r.verdict === "PASS" && !aRegle(r, "DAST-REGLE-HORS-IMAGE") && r.synthese?.zap?.regles_image?.alertes_comparees === 1,
+        `TF-2477 · VERT — « Charset Mismatch (Header Versus Meta Content-Type Charset) » est une variante d'une règle listée : non signalée (obtenu ${r.verdict})`);
+    }
+    // ZAP natif simulé : la mise à jour des modules n'est pas maîtrisée, et le verdict le dit
+    {
+      fs.rmSync(trace, { force: true });
+      const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--mode", "passif"], {
+        WEBSEC_DAST_ZAP: path.join(dossier, "zap-baseline.mjs"), WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-propre.json"),
+      });
+      ok(r.verdict === "PASS" && /^non maîtrisée/.test(r.synthese?.balayage?.maj_modules) && r.synthese?.balayage?.image === undefined,
+        `TF-2477 · ZAP natif simulé : la mise à jour des modules est dite non maîtrisée, aucune image n'est annoncée (obtenu ${r.verdict})`);
+    }
+  }
+  // rapport fourni : la comparaison a lieu aussi, avec une cause qui ne prétend pas connaître l'image
+  {
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-regle-levee.json")]);
+    const f = (r.findings || []).find((x) => x.regle === "DAST-REGLE-HORS-IMAGE");
+    ok(f && /ne vient pas, ou pas avec certitude, de l'image épinglée/.test(f.msg), "TF-2477 · ROUGE — un rapport fourni (--rapport) qui porte une règle hors liste la signale avec une cause qui ne présume pas de l'image");
+    const connu = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-vulnerable.json")]);
+    ok(!aRegle(connu, "DAST-REGLE-HORS-IMAGE"), "TF-2477 · VERT — les trois alertes du rapport vulnérable de référence sont des règles de l'image : aucun signal");
+  }
+  // liste illisible : dite, jamais silencieuse
+  {
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-propre.json")], { WEBSEC_DAST_REGLES: path.join(dossier, "absente.json") });
+    ok(r.verdict === "PASS" && aRegle(r, "DAST-REGLES-ILLISIBLES") && r.synthese?.zap?.regles_image?.comparees === false,
+      `TF-2477 · ROUGE — une liste de règles introuvable est dite (DAST-REGLES-ILLISIBLES), la comparaison n'est pas faite et le verdict ne s'en trouve pas changé (obtenu ${r.verdict})`);
+  }
+  fs.rmSync(dossier, { recursive: true, force: true });
+}
+
 console.log(`\nSelf-test forge-websec : ${pass} PASS, ${echec} FAIL, ${note} SKIP motivé (outillage/réseau du poste, non comptés)`);
 process.exit(echec ? 1 : 0);
