@@ -235,6 +235,22 @@ Le fichier d'autorisation porte aussi les limites du balayage, les mêmes dans l
 | `en_tete_acces` `{nom, valeur}` ou `{nom, valeur_env}` | un en-tête ajouté à toute requête vers l'origine autorisée (règle `replacer`, bornée à cette origine) ; `valeur_env` nomme une variable d'environnement, pour ne pas écrire un secret dans le mandat | `DAST-AUTZ-CHAMPS` ; une variable absente refuse aussi le balayage |
 | `debit_max_requetes_par_seconde` (nombre, 0 < n ≤ 1000) | un fil et `ceil(1000/n)` ms entre deux requêtes, pour l'araignée et pour l'attaque | `DAST-AUTZ-CHAMPS` |
 | `exclusions` (liste de chemins, `/…`) | aucune requête vers l'origine autorisée + chemin (préfixe compris) : exclusion globale ZAP | `DAST-AUTZ-CHAMPS` |
+| `duree_max_minutes` (nombre, 0 < n ≤ 1440) | ZAP est arrêté au bout de cette durée | `DAST-AUTZ-CHAMPS` |
+| `plafond_requetes` (entier, 1 à 1 000 000 ; exige le débit) | la durée se déduit : plafond × délai entre requêtes + 5 min de démarrage | `DAST-AUTZ-CHAMPS` |
+
+**Délai de ZAP (0.3.0, TF-2486).** `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, la
+durée de `plafond_requetes` requêtes (1000 par défaut) plus 5 min, jamais moins de 30 min ; sinon 30
+min. Le délai est toujours borné par la fin de la fenêtre d'autorisation. À 10 requêtes par minute, il
+vaut 105 min, là où le délai fixe de la 0.2.0 coupait ZAP vers la 299e requête. Quand il est
+dépassé, l'oracle arrête l'arbre de processus entier (`taskkill /T` sous Windows, groupe de processus
+ailleurs, `docker rm -f` du conteneur nommé) et rend `SKIP` `DAST-DELAI`. `synthese.balayage` porte le
+délai retenu et sa source.
+
+**Lancement sur Windows (0.3.0, TF-2485).** Node refuse de lancer un `.bat` ou un `.cmd` sans shell
+(`EINVAL`, mesuré sous Node v24.16.0). `zap.bat` passe donc par `cmd.exe /d /v:off /s /c`, chaque
+argument entre guillemets ; un argument qui porte `"` ou `%` n'est jamais réécrit et rend `SKIP`
+`DAST-LANCEMENT`. ZAP natif tourne dans son propre dossier, avec `-dir` vers un dossier de travail
+jetable. Un lancement refusé par le système est dit avec son code d'erreur.
 
 Une option présente et mal formée refuse le balayage : il ne part jamais sans une limite que le
 mandat avait posée. La voie `--rapport` n'émet rien et ne lit pas ces champs. La valeur de l'en-tête
@@ -403,8 +419,8 @@ l'image a été levée : `referentiels/wstg-cas.md` en reprend le résultat dans
 - **Ce qui reste non prouvé, et doit le rester tant que personne ne l'a exercé** : l'installation
   NATIVE de ZAP sur ce poste (le JRE réclame une élévation, la voie Docker a été retenue) — les
   formes `zap-baseline.py`, `zap-full-scan.py`, `zap.sh` et `zap.bat` ne sont prouvées que par un ZAP
-  simulé qui enregistre sa ligne de commande, et le balayage rapide de `zap.sh` n'a jamais été
-  lancé ; et le comportement sur une application réelle, riche et authentifiée — les cibles de preuve
+  simulé qui enregistre sa ligne de commande (depuis la 0.3.0, `zap.bat` et `zap.sh` sont de vrais
+  scripts qui l'enveloppent), et le balayage rapide du vrai ZAP natif n'a jamais été lancé ; et le comportement sur une application réelle, riche et authentifiée — les cibles de preuve
   sont une page statique (14/08/2026) et une cible de fixture de quatre routes (12/11/2026).
 - **Aucun scan sans autorisation écrite.** `oracle-dast` refuse (`FAIL`, exit 1) toute cible
   qui n'est pas nommément déclarée dans un fichier d'autorisation daté et en cours de validité
@@ -455,7 +471,7 @@ oracles/
   oracle-sca.mjs          enveloppe npm audit / pip-audit (ou uvx pip-audit ; uv.lock, poetry.lock) en verdict machine normalisé
   oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils
   oracle-workflows.mjs    juge les workflows GitHub Actions — 5 règles WF-1..WF-5, lecteur YAML natif
-  self-test.mjs           rejeu intégral à double sens (260 contrôles le 13/11/2026)
+  self-test.mjs           rejeu intégral à double sens (277 contrôles le 13/11/2026)
 scripts/
   preuve-dast-actif.mjs   banc réel du mode actif d'oracle-dast : vrai ZAP (Docker) contre la cible locale de fixture, hors self-test
   preuve-dast-passif.mjs  banc réel du mode passif d'oracle-dast : vrai ZAP (Docker) contre la cible passive de fixture, hors self-test

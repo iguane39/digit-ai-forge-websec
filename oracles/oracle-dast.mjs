@@ -44,7 +44,9 @@
 //   `en_tete_acces` {nom, valeur | valeur_env} : en-tête ajouté à toute requête vers l'origine
 //                     autorisée (la valeur ne sort jamais dans le verdict) ;
 //   `debit_max_requetes_par_seconde` : un fil, un délai de ceil(1000/n) ms entre deux requêtes ;
-//   `exclusions` : chemins (« /deconnexion ») dont aucune requête ne part, préfixe compris.
+//   `exclusions` : chemins (« /deconnexion ») dont aucune requête ne part, préfixe compris ;
+//   `duree_max_minutes` : durée au-delà de laquelle ZAP est arrêté (TF-2486) ;
+//   `plafond_requetes` : avec un débit, le nombre de requêtes dont la durée se déduit (défaut 1000).
 // Une option présente et mal formée est un refus (FAIL), jamais un balayage sans la limite.
 // Image ZAP épinglée (TF-2477) : la voie Docker lance une image désignée par son EMPREINTE (IMAGE_DEFAUT),
 // jamais par l'étiquette mobile `stable`, qui change de règles sans que le référentiel le sache ; et elle
@@ -54,6 +56,14 @@
 // (DAST-REGLE-HORS-IMAGE, info). Une image désignée par WEBSEC_DAST_IMAGE sans empreinte ni version est dite
 // mobile au verdict (DAST-IMAGE-MOBILE) ; la mise à jour des modules d'un ZAP natif n'est pas maîtrisée, et
 // le verdict le consigne (synthese.balayage.maj_modules).
+// Délai de ZAP (TF-2486) : `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, le temps de
+// `plafond_requetes` requêtes au délai imposé plus 5 min de démarrage, jamais moins de 30 min ; sinon
+// 30 min. Il est toujours borné par la fin de la fenêtre d'autorisation. Quand il coupe ZAP, l'arbre
+// de processus entier est arrêté (cmd.exe, java ; le conteneur Docker est retiré) et le SKIP le dit.
+// Lancement sur Windows (TF-2485) : Node refuse de lancer un `.bat` ou un `.cmd` sans shell (EINVAL).
+// L'oracle le passe à `cmd.exe /d /v:off /s /c` sur une ligne où chaque argument est entre guillemets,
+// et refuse (SKIP) un argument qui porte `"` ou `%`, que cmd.exe interpréterait. ZAP natif tourne dans
+// son propre dossier (`cwd`), avec `-dir` vers un dossier de travail jetable.
 // ZAP absent du poste → verdict SKIP MOTIVÉ (exit 2), jamais un PASS de complaisance : c'est
 // le chemin nominal sur un poste non équipé, et il est prouvé par fixture au self-test.
 //
@@ -66,10 +76,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.2.1";
+const VERSION = "0.3.1";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -84,7 +94,8 @@ const NON_JUGE = [
   "la liste des règles de l'image (referentiels/zap-regles.json) : un surensemble des noms d'alerte, lu dans l'image par scripts/lire-regles-zap.mjs ; une alerte hors liste est signalée, une alerte dans la liste n'est pas pour autant prouvée émise par l'image",
   "la couche TLS (versions, suites, chaîne de certificat) — hors périmètre, cf. README §Limites",
   "la correction des alertes signalées — un constat, jamais un geste automatique",
-  "l'exécution réelle sur une application riche et authentifiée : la preuve réelle (scripts/preuve-dast-actif.mjs) vise une cible de fixture locale de quelques routes, par l'image Docker de ZAP ; les formes natives (zap-baseline.py, zap-full-scan.py, zap.sh, zap.bat) ne sont prouvées que par un ZAP simulé qui enregistre sa ligne de commande (cf. README §Limites)",
+  "l'exécution réelle sur une application riche et authentifiée : la preuve réelle (scripts/preuve-dast-actif.mjs) vise une cible de fixture locale de quelques routes, par l'image Docker de ZAP ; les formes natives (zap-baseline.py, zap-full-scan.py, zap.sh, zap.bat) ne sont prouvées que par un ZAP simulé qui enregistre sa ligne de commande — zap.bat et zap.sh par un vrai script qui l'enveloppe, jamais par le vrai ZAP natif (cf. README §Limites)",
+  "la durée réelle d'un balayage : le délai déduit du débit suppose un plafond de requêtes (déclaré, ou 1000 par défaut) ; une cible plus vaste que ce plafond est coupée, et le SKIP le dit",
   "le débit tenu au millième près : la borne est un fil et un délai entre requêtes côté ZAP, pas un limiteur réseau ; une règle active qui émet plusieurs requêtes d'affilée reste soumise au même délai, mais le débit instantané n'est pas mesuré par cet oracle",
   "la discrétion de l'en-tête d'accès : sa valeur ne sort jamais du verdict, mais elle figure dans la ligne de commande du processus ZAP (ou docker) le temps du balayage, lisible dans la liste des processus du poste",
 ];
@@ -351,14 +362,58 @@ if (autz.exclusions !== undefined) {
     invalides.push("exclusions (liste de chemins commençant par « / », sans espace)");
   } else exclusions = autz.exclusions;
 }
+let dureeMaxMinutes = null;
+if (autz.duree_max_minutes !== undefined) {
+  const d = autz.duree_max_minutes;
+  if (typeof d !== "number" || !Number.isFinite(d) || d <= 0 || d > 1440) invalides.push("duree_max_minutes (nombre supérieur à 0 et au plus 1440, soit 24 h)");
+  else dureeMaxMinutes = d;
+}
+let plafondRequetes = null;
+if (autz.plafond_requetes !== undefined) {
+  const p = autz.plafond_requetes;
+  if (!Number.isInteger(p) || p < 1 || p > 1000000) invalides.push("plafond_requetes (entier de 1 à 1 000 000)");
+  else if (autz.debit_max_requetes_par_seconde === undefined) invalides.push("plafond_requetes (sans debit_max_requetes_par_seconde, aucune durée ne s'en déduit : déclarer le débit, ou duree_max_minutes)");
+  else plafondRequetes = p;
+}
 if (invalides.length) {
   add("bloquant", "DAST-AUTZ-CHAMPS", `option(s) de balayage invalide(s) : ${invalides.join(" ; ")}. Refus net — un balayage ne part jamais sans une limite que le mandat avait posée.`, autorisationPath);
   sortir("FAIL", 1);
 }
+// ── Délai de ZAP (TF-2486) ───────────────────────────────────────────────────
+// Le constat : un délai fixe de 30 min coupait avant son rapport tout balayage dont le mandat borne
+// le débit. À 10 requêtes par minute (6 000 ms entre deux), 30 min font environ 299 requêtes ; le
+// banc en a compté 891 pour une cible de 4 routes. Le plafond par défaut, 1000, couvre ce banc.
+const DUREE_DEFAUT_MIN = 30;
+const DEMARRAGE_MIN = 5;
+const PLAFOND_REQUETES_DEFAUT = 1000;
+let delaiMinutes;
+let delaiSource;
+if (dureeMaxMinutes !== null) {
+  delaiMinutes = dureeMaxMinutes;
+  delaiSource = "duree_max_minutes du mandat";
+} else if (debit) {
+  const plafond = plafondRequetes ?? PLAFOND_REQUETES_DEFAUT;
+  const deduit = Math.ceil((plafond * debit.delai_ms) / 60000) + DEMARRAGE_MIN;
+  delaiMinutes = Math.max(DUREE_DEFAUT_MIN, deduit);
+  delaiSource = `déduit du débit : ${plafond} requêtes × ${debit.delai_ms} ms + ${DEMARRAGE_MIN} min de démarrage`
+    + `${plafondRequetes === null ? " (plafond par défaut)" : ""}${deduit < DUREE_DEFAUT_MIN ? `, relevé au plancher de ${DUREE_DEFAUT_MIN} min` : ""}`;
+} else {
+  delaiMinutes = DUREE_DEFAUT_MIN;
+  delaiSource = `défaut de ${DUREE_DEFAUT_MIN} min (ni débit ni duree_max_minutes dans le mandat)`;
+}
+const resteFenetreMin = (fin.getTime() - Date.now()) / 60000;
+if (resteFenetreMin < delaiMinutes) {
+  delaiMinutes = Math.max(resteFenetreMin, 0);
+  delaiSource += " ; borné par la fin de la fenêtre d'autorisation";
+}
+const delaiMs = Math.max(1, Math.floor(delaiMinutes * 60000));
+const arrondi = (m) => Math.round(m * 100) / 100;
+
 synthese.balayage = {
   scan: mode,
   en_tete_acces: enTeteAcces ? { nom: enTeteAcces.nom, valeur: "(masquée)", source: enTeteAcces.source } : null,
   debit, exclusions,
+  delai_max_minutes: arrondi(delaiMinutes), delai_source: delaiSource,
 };
 
 // Options passées à ZAP en paires clé=valeur (`-config clé=valeur`), les mêmes pour les trois formes.
@@ -395,6 +450,17 @@ function resoluDansLePath(cmd) {
     ? spawnSync("where", [cmd], { encoding: "utf8", timeout: 10000 })
     : spawnSync("sh", ["-c", `command -v ${JSON.stringify(cmd)}`], { encoding: "utf8", timeout: 10000 });
   return r.error === undefined && r.status === 0 && String(r.stdout || "").trim().length > 0;
+}
+
+// Chemin complet d'une commande résolue : il fixe le dossier courant de ZAP natif, dont zap.bat a
+// besoin (TF-2485). Même résolution que ci-dessus, sans rien exécuter de la commande elle-même.
+function cheminResolu(cmd) {
+  if (cmd.includes("/") || cmd.includes("\\")) return path.resolve(cmd);
+  const r = process.platform === "win32"
+    ? spawnSync("where", [cmd], { encoding: "utf8", timeout: 10000 })
+    : spawnSync("sh", ["-c", `command -v ${JSON.stringify(cmd)}`], { encoding: "utf8", timeout: 10000 });
+  const premiere = String(r.stdout || "").split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+  return premiere ? path.resolve(premiere) : null;
 }
 
 // Voie DOCKER (14/08, TF-0206) : c'est la façon dont ZAP est réellement exécuté en chaîne
@@ -496,22 +562,51 @@ const scriptDocker = mode === "actif" ? "zap-full-scan.py" : "zap-baseline.py";
 // des add-ons bêta, que zap-baseline.py et zap-full-scan.py sautent quand `-silent` figure dans -z).
 const optionsDocker = ["-z", ["-silent", ...optionsZapListe.map((o) => `-config ${citer(o)}`)].join(" ")];
 
+// Nom du conteneur : c'est par lui qu'un délai dépassé le retire (TF-2486). Tuer le client docker ne
+// suffit pas sous Windows, où le conteneur continuerait d'émettre vers la cible.
+const nomConteneur = `websec-zap-${horodatage}-${process.pid}`;
+const cheminZap = zap.mode === "docker" ? null : cheminResolu(zap.cmd);
 let commande = zap.cmd;
 let argv;
+let cwd;
 if (zap.mode === "docker") {
   // Les scripts écrivent leurs rapports dans /zap/wrk : on y monte un dossier de travail
   // du poste, et le rapport en ressort par le montage. `--rm` : aucun conteneur ne survit.
   argv = [
-    "run", "--rm", "-v", `${dossierTravail}:/zap/wrk:rw`, zap.image,
+    "run", "--rm", "--name", nomConteneur, "-v", `${dossierTravail}:/zap/wrk:rw`, zap.image,
     scriptDocker, "-t", cible, "-J", nomRapport, "-I", ...optionsDocker,
   ];
 } else if (zap.forme === "rapide") {
-  argv = ["-cmd", ...optionsZapListe.flatMap((o) => ["-config", o]), "-quickurl", cible, "-quickout", sortieRapport];
+  // zap.sh / zap.bat : `-dir` pointe un dossier de ZAP jetable, qui ne heurte pas le dossier d'une
+  // instance de bureau ouverte sur le poste (TF-2485).
+  const dossierZap = path.join(dossierTravail, "zap-home");
+  fs.mkdirSync(dossierZap);
+  argv = ["-cmd", "-dir", dossierZap, ...optionsZapListe.flatMap((o) => ["-config", o]), "-quickurl", cible, "-quickout", sortieRapport];
 } else {
   argv = ["-t", cible, "-J", sortieRapport, "-I", ...optionsScript];
 }
-// Un script .mjs (ZAP simulé du banc) est joué par node, comme les outils simulés d'oracle-sca.
-if (/\.mjs$/i.test(zap.cmd)) { argv = [zap.cmd, ...argv]; commande = process.execPath; }
+// ZAP natif tourne dans son propre dossier : zap.bat l'exige pour trouver son jar (TF-2485).
+if (cheminZap) cwd = path.dirname(cheminZap);
+let windowsVerbatimArguments = false;
+if (/\.mjs$/i.test(zap.cmd)) {
+  // Un script .mjs (ZAP simulé du banc) est joué par node, comme les outils simulés d'oracle-sca.
+  argv = [cheminZap || zap.cmd, ...argv]; commande = process.execPath;
+} else if (process.platform === "win32" && /\.(bat|cmd)$/i.test(zap.cmd)) {
+  // Node refuse de lancer un .bat ou un .cmd sans shell (EINVAL, mesuré sous Node v24.16.0). La ligne
+  // passe à cmd.exe, chaque argument entre guillemets : entre guillemets, cmd.exe lit `^ & | < > ( )`
+  // comme du texte. Il interprète encore `%` (variables) et ne sait pas échapper `"` : un argument qui
+  // en porte un n'est jamais réécrit, il fait refuser le lancement.
+  const piege = [cheminZap || zap.cmd, ...argv].filter((a) => /["%\r\n]/.test(a));
+  if (piege.length) {
+    add("info", "DAST-LANCEMENT", `ZAP (« ${zap.cmd} ») non lancé : ${piege.length} argument(s) portent \`"\`, \`%\` ou un saut de ligne, que cmd.exe interpréterait au lieu de les transmettre à ZAP (par ex. « ${masquer(piege[0]).slice(0, 120)} »). Aucun scan lancé : retirer ce caractère de la cible ou du mandat, ou désigner zap-full-scan.py ou l'image Docker.`, origineCible);
+    synthese.zap = { provenance: "aucune — ligne de commande non transmissible par cmd.exe", rapport: null };
+    sortir("SKIP", 2);
+  }
+  const ligne = [cheminZap || zap.cmd, ...argv].map((a) => `"${a}"`).join(" ");
+  commande = process.env.ComSpec || "cmd.exe";
+  argv = ["/d", "/v:off", "/s", "/c", `"${ligne}"`];
+  windowsVerbatimArguments = true;
+}
 const commandeLisible = zap.mode === "docker" ? `docker run ${zap.image} ${scriptDocker}` : zap.cmd;
 synthese.balayage.forme = zap.forme;
 synthese.balayage.commande = commandeLisible;
@@ -525,10 +620,48 @@ if (zap.mode === "docker") {
 } else {
   synthese.balayage.maj_modules = "non maîtrisée : ZAP natif du poste, dont l'oracle ne coupe pas la mise à jour des modules au lancement";
 }
-const r = spawnSync(commande, argv, { encoding: "utf8", timeout: 1800000, shell: false });
+if (cwd) synthese.balayage.dossier_courant = cwd;
+
+// Exécution bornée par le délai, avec arrêt de l'ARBRE de processus (TF-2486) : `spawnSync` ne tue
+// que l'enfant direct, et sous Windows l'enfant direct de zap.bat est cmd.exe — java aurait continué
+// le balayage après le délai, donc au-delà de ce que le mandat autorise.
+function executer() {
+  return new Promise((resoudre) => {
+    let stdout = "";
+    let stderr = "";
+    let coupe = false;
+    let p;
+    try {
+      p = spawn(commande, argv, {
+        shell: false, cwd, windowsVerbatimArguments, windowsHide: true,
+        detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (e) { resoudre({ error: e, status: null, signal: null, stdout, stderr, coupe }); return; }
+    p.stdout.on("data", (d) => { if (stdout.length < 65536) stdout += d; });
+    p.stderr.on("data", (d) => { if (stderr.length < 65536) stderr += d; });
+    const minuterie = setTimeout(() => {
+      coupe = true;
+      if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(p.pid), "/T", "/F"], { timeout: 30000, windowsHide: true });
+      else { try { process.kill(-p.pid, "SIGKILL"); } catch { try { p.kill("SIGKILL"); } catch { /* déjà fini */ } } }
+      if (zap.mode === "docker") lancerDocker(["rm", "-f", nomConteneur], { timeout: 60000, windowsHide: true });
+    }, delaiMs);
+    p.on("error", (e) => { clearTimeout(minuterie); resoudre({ error: e, status: null, signal: null, stdout, stderr, coupe }); });
+    p.on("close", (status, signal) => { clearTimeout(minuterie); resoudre({ error: undefined, status, signal, stdout, stderr, coupe }); });
+  });
+}
+const r = await executer();
+synthese.balayage.execution = { code_sortie: r.status, signal: r.signal || null, coupe_par_le_delai: r.coupe, erreur: r.error ? (r.error.code || String(r.error.message)) : null };
+if (r.coupe) {
+  add("info", "DAST-DELAI", `ZAP (« ${commandeLisible} ») arrêté au bout de ${arrondi(delaiMinutes)} min (${delaiSource}), avant d'avoir livré son rapport ; l'arbre de processus a été arrêté${zap.mode === "docker" ? " et le conteneur retiré" : ""}. SKIP motivé : allonger \`duree_max_minutes\` ou \`plafond_requetes\` dans le mandat, dans les limites de sa fenêtre, ou réduire le périmètre par \`exclusions\`.`, origineCible);
+  synthese.zap = { provenance: `exécution ${commandeLisible} coupée par le délai`, rapport: null };
+  sortir("SKIP", 2);
+}
 if (!fs.existsSync(sortieRapport)) {
   const extrait = masquer(String(r.stderr || r.stdout || "")).slice(0, 300).trim();
-  add("info", "DAST-SKIP", `ZAP (« ${commandeLisible} ») lancé mais aucun rapport exploitable produit : ${extrait || "sortie vide"}. SKIP motivé — jamais un PASS faute de preuve.`, origineCible);
+  const cause = r.error
+    ? `le système a refusé de lancer la commande (${r.error.code || r.error.message})`
+    : `ZAP a fini (code ${r.status}${r.signal ? `, signal ${r.signal}` : ""}) sans rapport exploitable : ${extrait || "sortie vide"}`;
+  add("info", "DAST-SKIP", `ZAP (« ${commandeLisible} ») : ${cause}. SKIP motivé — jamais un PASS faute de preuve.`, origineCible);
   synthese.zap = { provenance: `exécution ${commandeLisible} en échec`, rapport: null };
   sortir("SKIP", 2);
 }

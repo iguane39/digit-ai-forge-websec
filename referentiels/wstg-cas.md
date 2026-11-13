@@ -1,7 +1,7 @@
 ---
-version: 0.2.2
+version: 0.2.3
 challenge_date: 2026-08-14
-oracle_dast: 0.2.1
+oracle_dast: 0.3.1
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
@@ -52,11 +52,11 @@ son mode actif lance un balayage actif. La section « Ce que le mode actif d'ora
 change, cas par cas, et sous quelle autorisation. `oracle_dast` du frontmatter nomme la version d'oracle décrite :
 le self-test de la forge refuse ce fichier si cette version n'est plus celle de l'oracle.
 
-**Ajout du 13/11/2026 (0.2.2, TF-2477).** L'image ZAP d'`oracle-dast` suivait l'étiquette mobile `stable`, et ses règles
+**Ajout du 13/11/2026 (0.2.3, TF-2477 et TF-2476).** L'image ZAP d'`oracle-dast` suivait l'étiquette mobile `stable`, et ses règles
 changeaient sans que ce document le sache. L'oracle (0.2.1) lance maintenant l'image désignée par son empreinte et passe
 `-silent` à ZAP, qui coupe la mise à jour des modules au lancement. Les règles de cette image sont listées dans
 `referentiels/zap-regles.json`, que produit `scripts/lire-regles-zap.mjs` ; une alerte dont le nom n'y figure pas est
-signalée au verdict (`DAST-REGLE-HORS-IMAGE`). `oracle_dast` du frontmatter suit la version 0.2.1.
+signalée au verdict (`DAST-REGLE-HORS-IMAGE`). `oracle_dast` du frontmatter suit la version 0.3.1.
 Même jour (TF-2476) : la section « Ce que le mode passif d'oracle-dast couvre » dit, cas par cas, ce que relève le mode passif
 (cookies, CORS, jeton CSRF pour SESS-02, CLNT-07 et SESS-05, plus INPV-01), comme TF-2460 l'a fait pour le mode actif ; le
 self-test compare chaque règle citée à la liste des règles de l'image.
@@ -178,8 +178,11 @@ datée en cours de validité ; l'origine de `--cible` figure à l'identique dans
 sans lui, `DAST-AUTZ-MODE` refuse le balayage avant toute émission vers la cible. Trois options du mandat valent
 dans les deux modes : `en_tete_acces` (un en-tête ajouté aux requêtes vers l'origine autorisée, le seul
 mécanisme d'authentification de l'oracle), `debit_max_requetes_par_seconde` et `exclusions` (chemins dont aucune requête
-ne part) ; une option mal formée refuse le balayage (`DAST-AUTZ-CHAMPS`). Chaque cas marqué `oracle-dast (actif …)`
-ci-dessus ne se joue que sous ces conditions, sur une instance dédiée.
+ne part) ; une option mal formée refuse le balayage (`DAST-AUTZ-CHAMPS`). Depuis la 0.3.0, deux options bornent sa
+durée : `duree_max_minutes`, ou `plafond_requetes` d'où la durée se déduit avec le débit, dans la fenêtre du mandat. Un
+balayage coupé par ce délai rend `SKIP` `DAST-DELAI`, sans alerte : un cas marqué actif n'est alors pas joué du tout,
+il n'est pas « sans alerte ». Chaque cas marqué `oracle-dast (actif …)` ci-dessus ne se joue que sous ces conditions,
+sur une instance dédiée.
 
 **Ce que l'oracle rend.** Des alertes ZAP triées par risque ; `high` et `medium` font échouer le verdict par défaut.
 Aucun identifiant WSTG ne circule dans son verdict : relier une alerte à un cas est un geste du lecteur, d'après

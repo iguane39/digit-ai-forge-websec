@@ -74,9 +74,35 @@ commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
   variable `WEBSEC_DAST_REGLES` pour la liste illisible. Avant la correction, mêmes contrôles sur l'ancien oracle (PATH sans `docker`) :
   239 PASS, 13 FAIL ; après : 252 PASS, 0 FAIL, 0 SKIP (236 PASS, 0 FAIL, 0 SKIP avant, même poste). Aucune assertion existante n'est
   modifiée.
+- **Fusion avec `oracle-dast` 0.3.0** (TF-2485, TF-2486, commit `2e663e3` de `main`) : l'oracle fusionné porte la version 0.3.1 et garde les
+  deux apports. Le retrait du conteneur sur délai dépassé (0.3.0) passe par le même Docker que le reste (`WEBSEC_DAST_DOCKER`), pour
+  qu'un Docker simulé ne tombe pas sur le vrai. `wstg-cas.md` passe à 0.2.3 (la 0.2.2 de `main` portait déjà un autre contenu) avec
+  `oracle_dast: 0.3.1`. Les chiffres de recette de ce bloc sont ceux d'avant la fusion ; ceux d'après sont au commit de fusion.
 - **Reste non prouvé** : l'image épinglée n'a servi qu'à des balayages de fixtures locales ; ZAP natif (non épinglé, mise à jour non
   coupée) et application riche ou authentifiée restent hors preuve. Les règles bêta ne tournent plus sur la voie Docker : une cible
   qui n'était couverte que par elles ne l'est plus.
+
+## 2026-11-13 — `oracle-dast` 0.3.0 : `zap.bat` part sous Windows, et le délai de ZAP suit le débit du mandat (TF-2485, TF-2486)
+
+- **Constat** (lot de retours d'un produit du 12/11/2026, RP-70 et RP-71, classe `oracle-chemin-prescrit-inoperant-sur-sa-cible`) :
+  la 0.2.0 lançait ZAP par `spawnSync(…, { shell: false })`. Sous Node v24.16.0, un `.bat` ainsi lancé rend `EINVAL` : `zap.bat`, la forme
+  que l'oracle prescrit sous Windows, ne partait jamais, et le SKIP disait « lancé mais aucun rapport exploitable produit : sortie vide ».
+  Reproduit sur ce poste le 13/11/2026 avec un vrai `zap.bat` qui enveloppe le ZAP simulé, même message. Le délai était fixe, 30 min : à
+  10 requêtes par minute (un délai de 6 000 ms), environ 299 requêtes, contre 891 comptées au banc pour 4 routes.
+- **Effet** :
+  - `zap.bat` / `zap.cmd` passent par `cmd.exe /d /v:off /s /c`, chaque argument entre guillemets. Un argument qui porte `"` ou `%` rend
+    `SKIP` `DAST-LANCEMENT` sans rien lancer.
+  - ZAP natif tourne dans son propre dossier (`cwd`), avec `-dir` vers un dossier de travail jetable.
+  - Un lancement refusé par le système cite son code d'erreur, et le mot « lancé » a quitté ce message.
+  - Deux options neuves du mandat bornent la durée : `duree_max_minutes` et `plafond_requetes`. Sans elles, avec un débit, le délai se
+    déduit de 1000 requêtes plus 5 min, jamais moins de 30 min. Il est toujours borné par la fin de la fenêtre.
+  - Le délai dépassé arrête l'arbre de processus entier et retire le conteneur Docker nommé. Avant, sous Windows, seul `cmd.exe` serait
+    mort et java aurait continué le balayage au-delà du délai. Le SKIP `DAST-DELAI` dit la durée et sa source.
+- **Banc** : 17 contrôles ajoutés au self-test, 10 rouges et 7 verts. Le cas `.bat` réel rendait SKIP avant la correction ; après, 253 PASS, 0
+  FAIL, 0 SKIP (236 PASS avant, même poste, Node v24.16.0). Le délai dépassé est prouvé par un ZAP simulé, petit-enfant de `zap.bat`,
+  qui n'écrit jamais son marqueur de fin. Une seule assertion existante a dû suivre : la barrière TF-2460, par `wstg-cas.md` 0.2.2.
+- **Non prouvé** : le vrai ZAP natif sous Windows, faute d'installation sur ce poste. Le délai déduit suppose un plafond de requêtes : une
+  cible plus vaste est coupée, et le SKIP le dit. Les deux limites sont écrites dans `non_juge`.
 
 ## 2026-11-12 — `wstg-cas.md` 0.2.1 : le référentiel dit ce que le mode actif d'`oracle-dast` couvre, et sous quelle autorisation (TF-2460)
 
