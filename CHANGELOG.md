@@ -5,6 +5,19 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-13 — README : plus de compte de recette en dur, et le verdict du gate n'est plus dit consommé par des « oracles M-1…M-5 » (TF-2490)
+
+- **Effet** : le README annonçait 229 PASS pour la recette ; mesurée le 13/11/2026 sur `main` (`ce9c4df`), elle en rend 277 (0 FAIL,
+  0 SKIP, exit 0). Il annonçait aussi 41 cas de self-test pour le volet DAST, que la sortie contredit (58 lignes PASS sous le titre du
+  volet DAST). Le
+  compte ne s'écrit plus : le README renvoie à la dernière ligne de la sortie de `oracles/self-test.mjs`. Il disait enfin le gate
+  consommé par « les oracles M-1…M-5 du pilot » : M-1…M-5 sont des étapes de `ETAPE-MEP.md` que la session du pilot exécute, et aucun
+  oracle du pilot ne lit le verdict (`git grep` de `websec_bloquant` et du verdict sur le pilot : seules `REGLES-PROJET.md` R-33 bis et
+  `references/ETAPES-RUN.md` le disent). La phrase nomme maintenant ce qui le consomme : la session, au dossier de MEP, non bloquant
+  par défaut, et le smoke post-déploiement qui joue `oracle-exposition`.
+- **Garde** : `oracles/self-test.mjs` refuse un README qui porte « n PASS », « n FAIL », « n SKIP », « n cas de self-test » ou
+  « oracles M-1… » (un vert sur le README réel, trois rouges sur des textes fautifs).
+
 ## 2026-11-13 — `wstg-cas.md` : le référentiel dit, cas par cas, ce que relève le mode passif d'`oracle-dast`, et le self-test compare les règles citées à celles de l'image (TF-2476)
 
 - **Effet** : le référentiel ne disait pas ce que le mode passif relève (cookies, CORS, jeton CSRF), alors que TF-2460 l'avait fait pour

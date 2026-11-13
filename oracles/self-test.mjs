@@ -1590,5 +1590,24 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2394 : en-têtes à n
   ok(sectionFausse !== reel && defautsReglesDast(sectionFausse, regles).some((d) => /section du mode passif cite « Règle Inventée »/.test(d)), "TF-2476 · ROUGE — la section du mode passif qui cite une règle inventée est refusée");
 }
 
+// ── TF-2490 · le README ne porte aucun compte de recette en dur, et ne dit pas « oracles M-1…M-5 » ───────────
+// Le 13/11/2026 le README annonçait 229 PASS pour une recette qui en rendait 236 (puis 277 sur main), et disait le gate
+// consommé par des « oracles M-1…M-5 » du pilot, qui sont des étapes de ETAPE-MEP.md exécutées par la session, pas des oracles.
+// Un compte recopié à la main périme à chaque cas ajouté : le README renvoie à la dernière ligne de cette sortie.
+{
+  const defautsReadme = (texte) => {
+    const defauts = [];
+    for (const m of texte.matchAll(/\b(\d+)\s+(PASS|FAIL|SKIP|cas de self-test)\b/g)) defauts.push(`compte de recette en dur « ${m[0]} »`);
+    if (/oracles?\s+M-1/i.test(texte)) defauts.push("les étapes M-1…M-5 du pilot sont dites des oracles");
+    return defauts;
+  };
+  const readme = fs.readFileSync(path.join(HERE, "..", "README.md"), "utf8");
+  const defReadme = defautsReadme(readme);
+  ok(defReadme.length === 0, `TF-2490 · VERT — le README ne porte ni compte de recette en dur ni « oracles M-1…M-5 »${defReadme.length ? " : " + defReadme.join(" ; ") : ""}`);
+  ok(defautsReadme("**prouvé** — 229 PASS, 0 FAIL, 0 SKIP à la dernière exécution").length === 3, "TF-2490 · ROUGE — « 229 PASS, 0 FAIL, 0 SKIP » est refusé (3 comptes en dur)");
+  ok(defautsReadme("prouvés par 41 cas de self-test").some((d) => /41 cas de self-test/.test(d)), "TF-2490 · ROUGE — « 41 cas de self-test » est refusé");
+  ok(defautsReadme("gate optionnel consommé par les oracles M-1…M-5 du pilot").some((d) => /M-1…M-5/.test(d)), "TF-2490 · ROUGE — « oracles M-1…M-5 du pilot » est refusé");
+}
+
 console.log(`\nSelf-test forge-websec : ${pass} PASS, ${echec} FAIL, ${note} SKIP motivé (outillage/réseau du poste, non comptés)`);
 process.exit(echec ? 1 : 0);
