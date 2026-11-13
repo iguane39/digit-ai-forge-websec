@@ -5,6 +5,36 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-13 — `wstg-cas.md` : le référentiel dit, cas par cas, ce que relève le mode passif d'`oracle-dast`, et le self-test compare les règles citées à celles de l'image (TF-2476)
+
+- **Effet** : le référentiel ne disait pas ce que le mode passif relève (cookies, CORS, jeton CSRF), alors que TF-2460 l'avait fait pour
+  le mode actif. La colonne « Outillage » de SESS-02, CLNT-07, SESS-05 et INPV-01 nomme maintenant la règle passive de l'image qui les
+  vise, et la section « Ce que le mode passif d'oracle-dast couvre » dit pour chacun ce que la règle relève, ce qu'elle ne dit pas et
+  ce qui a été constaté. Les comptes de la section « Limites » passent de 21 à 19 cas `manuel` seuls et de 4 à 6 cas manuels avec une
+  part relevée par `oracle-dast` (recomptés par script : 19 + 6 + 7 + 7 = 39). Le fichier garde sa version 0.2.2, déjà incrémentée par
+  TF-2477 pour ce lot.
+- **Mesuré le 13/11/2026 avec le vrai ZAP** (`scripts/preuve-dast-passif.mjs`, image épinglée, 42 s, cible `fixtures/dast/cible-passive.mjs`,
+  8 requêtes reçues) : levées, « Cookie No HttpOnly Flag » et « Cookie without SameSite Attribute » (risque bas), « Cross-Domain
+  Misconfiguration » et « Absence of Anti-CSRF Tokens » (risque moyen) ; non levée, « Cookie Without Secure Flag » (cible servie en
+  HTTP) ; non essayées, « Loosely Scoped Cookie » et les deux règles de INPV-01. Aucune requête hors des routes de la cible. Aucune
+  alerte hors des règles de l'image. L'alerte CORS ne dit pas si c'est le joker ou l'origine reflétée qui l'a levée : le référentiel
+  le dit.
+- **Constat hors périmètre, à décider** : l'araignée du mode passif SOUMET le formulaire qu'elle trouve (un POST vers `/connexion`, corps
+  `identifiant=ZAP&secret=ZAP`). Le mode passif n'attaque pas, mais il n'est pas en lecture seule ; l'oracle ne coupe pas la
+  soumission, et seule `exclusions` du mandat l'empêche. Le référentiel et le README le disent ; l'oracle n'est pas modifié.
+- **Barrière** (classe `oracle-perimetre-de-non-mesure-non-publie`) : chaque nom entre « » de la colonne « Outillage » d'un cas confié à
+  `oracle-dast` se rattache au mode qui le précède dans la cellule et doit être, exactement, une règle passive (ou active) de
+  `referentiels/zap-regles.json` ; un cas confié au mode passif nomme une règle ; SESS-02, CLNT-07 et SESS-05 en nomment une ; les noms de
+  la section du mode passif sont des règles listées. Le contrôle a trouvé un défaut déjà présent : INPV-07 citait « Exponential Entity
+  Expansion », le nom exact de l'image est « Exponential Entity Expansion (Billion Laughs Attack) » (corrigé).
+- **Banc** : 8 contrôles ajoutés au self-test, 6 rouges à double sens (nom absent de l'image, règle active citée au mode passif, SESS-05
+  sans règle, mode passif sans règle, règle retirée de la liste, règle inventée dans la section). Joué contre le référentiel d'avant :
+  6 défauts (INPV-01 sans règle, « Exponential Entity Expansion », SESS-02, CLNT-07 et SESS-05 sans règle passive, section absente).
+  Rejeu complet du self-test : 252 PASS, 0 FAIL, 0 SKIP avant (commit de TF-2477), 260 PASS, 0 FAIL, 0 SKIP après (2 min 39, même
+  poste). Aucune assertion existante n'est modifiée.
+- **Reste non prouvé** : la cible de fixture passive est en HTTP ; l'effet de HTTPS sur « Cookie Without Secure Flag » n'est pas mesuré.
+  Aucune application riche ni authentifiée n'a été balayée en mode passif.
+
 ## 2026-11-13 — `oracle-dast` 0.2.1 : l'image ZAP est épinglée par empreinte, la mise à jour des modules est coupée, les règles de l'image sont listées (TF-2477)
 
 - **Effet** : la voie Docker lançait `ghcr.io/zaproxy/zaproxy:stable`, une étiquette qui change d'image sans prévenir, et

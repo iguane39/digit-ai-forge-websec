@@ -7,6 +7,7 @@ sources:
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
   - "OWASP Application Security Verification Standard (ASVS) 5.0.0 — mai 2025, CC BY-SA 4.0 — colonne de rattachement de ce document, via referentiels/asvs-l1.md"
   - "Noms des règles d'attaque active de ZAP 2.17.0 (modules ascanrules et domxss de l'image ghcr.io/zaproxy/zaproxy:stable), lus localement le 2026-11-12 dans leurs fichiers de messages, sans balayage ; alertes d'un balayage actif réel contre la cible de fixture locale du dépôt, même date — section « Ce que le mode actif d'oracle-dast couvre »"
+  - "Alertes d'une passe passive réelle (ZAP 2.17.0, image épinglée) contre la cible de fixture passive du dépôt, 2026-11-13, par scripts/preuve-dast-passif.mjs — section « Ce que le mode passif d'oracle-dast couvre »"
   - "Règles de l'image ZAP 2.17.0 épinglée par empreinte (ghcr.io/zaproxy/zaproxy@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef, créée le 2026-08-07), lues le 2026-11-13 sans réseau par scripts/lire-regles-zap.mjs et écrites dans referentiels/zap-regles.json : add-ons chargés vérifiés par ZAP lui-même (-addonlist)"
 ---
 
@@ -56,6 +57,9 @@ changeaient sans que ce document le sache. L'oracle (0.2.1) lance maintenant l'i
 `-silent` à ZAP, qui coupe la mise à jour des modules au lancement. Les règles de cette image sont listées dans
 `referentiels/zap-regles.json`, que produit `scripts/lire-regles-zap.mjs` ; une alerte dont le nom n'y figure pas est
 signalée au verdict (`DAST-REGLE-HORS-IMAGE`). `oracle_dast` du frontmatter suit la version 0.2.1.
+Même jour (TF-2476) : la section « Ce que le mode passif d'oracle-dast couvre » dit, cas par cas, ce que relève le mode passif
+(cookies, CORS, jeton CSRF pour SESS-02, CLNT-07 et SESS-05, plus INPV-01), comme TF-2460 l'a fait pour le mode actif ; le
+self-test compare chaque règle citée à la liste des règles de l'image.
 
 **Colonne « Outillage »** : `oracle-exposition` | `oracle-sca` | `oracle-dast` | `manuel` —
 jamais inventée. Un cas confié à `oracle-dast` nomme toujours le mode qui le lève, `passif` ou `actif` :
@@ -109,18 +113,18 @@ d'autorisation de cet oracle, et une absence d'alerte n'y vaut jamais preuve d'a
 
 | ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
 |---|---|---|---|---|
-| WSTG-SESS-02 | Les cookies de session portent-ils les attributs qui les protègent ? | Lire les en-têtes `Set-Cookie` : `Secure`, `HttpOnly`, `SameSite`, préfixe `__Host-`/`__Secure-` | **V3.3.1** | **oracle-exposition (EX-8 ; EX-9/EX-10 hors L1)** |
+| WSTG-SESS-02 | Les cookies de session portent-ils les attributs qui les protègent ? | Lire les en-têtes `Set-Cookie` : `Secure`, `HttpOnly`, `SameSite`, préfixe `__Host-`/`__Secure-` | **V3.3.1** | **oracle-exposition (EX-8 ; EX-9/EX-10 hors L1)** ; oracle-dast (passif, complément : règles « Cookie No HttpOnly Flag », « Cookie without SameSite Attribute », « Cookie Without Secure Flag » et « Loosely Scoped Cookie », qui lisent tout `Set-Cookie` vu pendant la passe, session ou non) |
 | WSTG-SESS-04 | Un identifiant de session ou une donnée sensible transite-t-il par l'URL ? | Parcourir l'application en relevant les query strings, puis vérifier les journaux d'accès et l'en-tête `Referer` sortant | V14.2.1 | manuel |
-| WSTG-SESS-05 | Une action sensible peut-elle être déclenchée depuis un autre site sans jeton ni contrôle d'origine ? | Rejouer une requête d'état depuis une page tierce, jeton anti-CSRF retiré puis remplacé par une valeur d'une autre session | V3.5.1, V3.5.2 | manuel |
+| WSTG-SESS-05 | Une action sensible peut-elle être déclenchée depuis un autre site sans jeton ni contrôle d'origine ? | Rejouer une requête d'état depuis une page tierce, jeton anti-CSRF retiré puis remplacé par une valeur d'une autre session | V3.5.1, V3.5.2 | manuel ; oracle-dast (passif, partiel : règle « Absence of Anti-CSRF Tokens », qui relève un formulaire sans jeton ; elle ne rejoue aucune requête depuis un autre site et ne juge ni la validité du jeton ni le contrôle d'origine) |
 
 ## 4.7 — Input Validation (WSTG-INPV)
 
 | ID WSTG | Cas (résumé d'une ligne) | Geste de vérification | Exigence ASVS rattachée | Outillage |
 |---|---|---|---|---|
-| WSTG-INPV-01 | Un paramètre renvoyé dans la page permet-il d'y injecter du script (XSS réfléchi) ? | Injecter un marqueur inoffensif dans chaque paramètre reflété et observer s'il ressort encodé ou interprété comme balise | V1.2.1 | oracle-dast (passif : reflet signalé, exploitation non prouvée ; actif : règle « Cross Site Scripting (Reflected) » et sa variante en réponse JSON, signal à qualifier ; alerte constatée sur la cible de fixture le 12/11/2026) |
+| WSTG-INPV-01 | Un paramètre renvoyé dans la page permet-il d'y injecter du script (XSS réfléchi) ? | Injecter un marqueur inoffensif dans chaque paramètre reflété et observer s'il ressort encodé ou interprété comme balise | V1.2.1 | oracle-dast (passif : règles « User Controllable HTML Element Attribute (Potential XSS) » et « User Controllable JavaScript Event (XSS) », qui signalent un reflet, exploitation non prouvée ; actif : règle « Cross Site Scripting (Reflected) » et sa variante en réponse JSON, signal à qualifier ; alerte constatée sur la cible de fixture le 12/11/2026) |
 | WSTG-INPV-02 | Un contenu enregistré ressort-il exécutable pour les autres utilisateurs (XSS stocké) ? | Déposer un marqueur inoffensif via chaque champ persisté, puis le relire depuis un autre compte et une autre vue | V1.3.1 | manuel ; oracle-dast (actif, partiel : règle « Cross Site Scripting (Persistent) » et ses deux amorces ; ZAP relit dans la même session, la relecture depuis un autre compte reste manuelle) |
 | WSTG-INPV-05 | Une entrée atteint-elle la base sans requête paramétrée (injection SQL) ? | Perturber la syntaxe d'un paramètre (quote, opérateur booléen, retard temporel) et observer erreur, différence de réponse ou de latence | V1.2.4 | oracle-dast (actif : règle « SQL Injection » et ses variantes temporelles, signal à qualifier ; alerte constatée sur la cible de fixture le 12/11/2026) |
-| WSTG-INPV-07 | Le parseur XML accepte-t-il des entités externes ou une structure altérée ? | Soumettre un document déclarant une entité externe locale et observer si le contenu est résolu ou l'erreur détaillée | V1.5.1 | oracle-dast (actif : règles « XML External Entity Attack » et « Exponential Entity Expansion » ; signal à qualifier) |
+| WSTG-INPV-07 | Le parseur XML accepte-t-il des entités externes ou une structure altérée ? | Soumettre un document déclarant une entité externe locale et observer si le contenu est résolu ou l'erreur détaillée | V1.5.1 | oracle-dast (actif : règles « XML External Entity Attack » et « Exponential Entity Expansion (Billion Laughs Attack) » ; signal à qualifier) |
 | WSTG-INPV-11 | Une entrée finit-elle évaluée comme du code applicatif (`eval`, désérialisation, template) ? | Injecter une expression neutre mais calculable dans les paramètres suspects et vérifier si le résultat calculé ressort | V1.3.2 | oracle-dast (actif : règles « Server Side Code Injection » et « Server Side Template Injection » ; signal à qualifier) |
 | WSTG-INPV-12 | Une entrée atteint-elle un appel système (injection de commande) ? | Ajouter un séparateur de commande suivi d'une commande inoffensive et observer la sortie ou le délai induit | V1.2.5 | oracle-dast (actif : règle « Remote OS Command Injection » et sa variante temporelle ; signal à qualifier) |
 | WSTG-INPV-19 | Une fonction qui va chercher une ressource à partir d'une valeur fournie (URL, nom de fichier, adresse de rappel) peut-elle être orientée vers une adresse interne ou un fichier local (SSRF) ? | Sur l'instance de recette autorisée, substituer à la valeur une adresse de bouclage, une adresse privée, le point d'accès de métadonnées du fournisseur de cloud, puis une redirection vers l'une d'elles, et observer réponse, délai ou contenu renvoyé | V5.3.2 | manuel ; oracle-dast (actif, partiel : seule règle voisine « Cloud Metadata Potentially Exposed », le module ascanrules ne porte pas de règle SSRF) |
@@ -142,7 +146,7 @@ d'autorisation de cet oracle, et une absence d'alerte n'y vaut jamais preuve d'a
 |---|---|---|---|---|
 | WSTG-CLNT-01 | Le code client écrit-il une donnée contrôlée par l'URL dans le DOM sans passer par une fonction sûre (XSS DOM) ? | Suivre les puits (`innerHTML`, `document.write`, `eval`) depuis les sources (`location`, `postMessage`) dans le JS servi | V3.2.2 | manuel ; oracle-dast (actif, partiel : règle « Cross Site Scripting (DOM Based) », qui rend un signal à qualifier, constaté le 12/11/2026 sur une cible de fixture dont la réflexion est côté serveur : l'alerte seule ne prouve pas un puits DOM) |
 | WSTG-CLNT-04 | Une redirection est-elle pilotée par un paramètre sans liste blanche de destinations ? | Remplacer la destination par une origine externe puis par un protocole dangereux (`javascript:`, `data:`) et voir si elle est suivie | V1.2.2 | oracle-dast (actif : règle « External Redirect » ; signal à qualifier) |
-| WSTG-CLNT-07 | La politique CORS renvoie-t-elle une origine reflétée ou un joker sur des données authentifiées ? | Rejouer une requête avec une `Origin` arbitraire et lire `Access-Control-Allow-Origin` / `-Credentials` de la réponse | V3.4.2 | manuel |
+| WSTG-CLNT-07 | La politique CORS renvoie-t-elle une origine reflétée ou un joker sur des données authentifiées ? | Rejouer une requête avec une `Origin` arbitraire et lire `Access-Control-Allow-Origin` / `-Credentials` de la réponse | V3.4.2 | manuel ; oracle-dast (passif, partiel : règle « Cross-Domain Misconfiguration », qui relève un en-tête CORS ouvert dans une réponse vue pendant la passe ; elle ne rejoue pas la requête avec une `Origin` arbitraire, le geste du cas, et ne dit pas si la donnée est authentifiée) |
 | WSTG-CLNT-09 | La page peut-elle être encadrée par un site tiers (clickjacking) ? | Charger l'URL dans une iframe d'origine différente et vérifier `X-Frame-Options` / `frame-ancestors` | hors L1 — cf. note de cohérence d'`asvs-l1.md` (L2/L3) | **oracle-exposition (EX-5)** |
 
 ## 4.9 — Cryptography (WSTG-CRYP)
@@ -201,9 +205,35 @@ jamais « tenu » : l'absence d'alerte ne dit rien du cas.
 
 **Ce que le mode actif ne couvre pas.** Aucune règle d'attaque active lue dans l'image ne vise les cas ATHN-02,
 ATHN-03, ATHZ-02 à ATHZ-04, BUSL-01, -02, -03, -06, -08, -09, CONF-06, IDNT-02 ni SESS-05. Ils demandent des
-comptes, des rôles ou une connaissance du métier que ZAP n'a pas : ils restent `manuel`. Il n'existe pas de règle
+comptes, des rôles ou une connaissance du métier que ZAP n'a pas : ils restent `manuel`, sauf SESS-05 dont le mode
+passif relève l'absence de jeton (section suivante). Il n'existe pas de règle
 SSRF dans les modules lus, donc INPV-19 reste manuel. `oracle-dast` ne passe pas `-j` à ZAP : l'araignée AJAX ne
 tourne pas.
+
+## Ce que le mode passif d'oracle-dast couvre
+
+Le mode passif lance `zap-baseline.py` ou l'image Docker épinglée : l'araignée parcourt la cible et les règles passives lisent
+chaque réponse, sans règle d'attaque active. Il reste soumis au garde-fou d'autorisation, et `actif_autorise` n'y est pas exigé.
+**Passif ne veut pas dire lecture seule.** Mesuré le 13/11/2026 sur une cible de fixture à formulaire, l'araignée soumet le
+formulaire : un POST vers `/connexion`, corps `identifiant=ZAP&secret=ZAP`, valeurs choisies par ZAP. Seule l'option `exclusions`
+du mandat empêche cette soumission pour un chemin donné ; un formulaire dont l'envoi agit (création, suppression) s'y déclare.
+Les alertes de risque bas, dont celles des cookies, sont comptées dans `synthese.zap.alertes` mais ne sont nommées au verdict
+qu'avec un seuil `low: 0` dans `--seuils` ; au seuil par défaut, seules les alertes `high` et `medium` (ici l'absence de jeton
+et l'en-tête CORS) font échouer.
+
+| Cas | Règles passives de l'image (noms exacts) | Ce qu'elles relèvent | Ce qu'elles ne disent pas | Constaté le 13/11/2026 |
+|---|---|---|---|---|
+| WSTG-SESS-02 | « Cookie No HttpOnly Flag », « Cookie without SameSite Attribute », « Cookie Without Secure Flag », « Loosely Scoped Cookie » | un attribut absent ou trop large sur un `Set-Cookie` vu dans une réponse | lequel des cookies est le cookie de session | `HttpOnly` et `SameSite`, risque bas, levées ; `Secure` non levée (cible servie en HTTP) ; `Loosely Scoped Cookie` non essayée |
+| WSTG-CLNT-07 | « Cross-Domain Misconfiguration » | un `Access-Control-Allow-Origin` ouvert dans une réponse, risque moyen | l'origine reflétée rejouée avec une `Origin` arbitraire ; la sensibilité des données | levée sur une cible qui offre un joker et une origine reflétée avec identifiants ; l'alerte ne dit pas laquelle des deux l'a levée, l'origine reflétée n'est donc pas établie |
+| WSTG-SESS-05 | « Absence of Anti-CSRF Tokens » | un formulaire sans jeton anti-CSRF, risque moyen | la requête rejouée depuis un autre site ; la validité du jeton ; le contrôle d'origine ou `SameSite` (V3.5.2) ; une requête d'état hors formulaire | levée sur un formulaire POST sans jeton |
+| WSTG-INPV-01 | « User Controllable HTML Element Attribute (Potential XSS) », « User Controllable JavaScript Event (XSS) » | une valeur reçue qui ressort dans un attribut HTML ou un événement | l'exploitation | non essayée : la cible de fixture passive ne reflète aucune valeur |
+
+Le mode passif relève aussi, sans que ce référentiel lui confie les cas (`oracle-exposition` les juge) : « Content Security
+Policy (CSP) Header Not Set » (CONF-12), « Missing Anti-clickjacking Header » (CLNT-09), « Strict-Transport-Security Header Not
+Set » (CONF-07) et « Server Leaks Version Information via "Server" HTTP Response Header Field » (INFO-02). Les deux premières ont
+été levées sur la cible de fixture passive ; les deux autres ne l'ont pas été. Les noms de règles de ce tableau et de ce texte
+sont ceux de `referentiels/zap-regles.json` : le self-test refuse un nom qui n'y figure pas, et un cas confié au mode passif
+sans règle nommée. La preuve est `scripts/preuve-dast-passif.mjs` (vrai ZAP, image épinglée, cible `fixtures/dast/cible-passive.mjs`).
 
 ## Chapitres et cas NON curés
 
@@ -248,14 +278,15 @@ recouper au sommaire du dépôt source : une v5.0 publiée renumérote et ajoute
   test d'intrusion : un pentest est conduit par un humain qui enchaîne les faiblesses,
   improvise hors scénario et juge l'exploitabilité réelle. Ce document ne fait que fixer une
   méthode reproductible sur un sous-ensemble.
-- **Une méthode, avant d'être un outil.** Sur les 39 cas, 21 sont `manuel` seuls : ils décrivent le geste
-  à faire, personne ne les exécute automatiquement. 4 autres (CONF-04, INPV-02, INPV-19, CLNT-01) restent manuels
-  avec une part relevée par le mode actif d'`oracle-dast`. 7 sont confiés à `oracle-dast` en mode actif
-  (ATHZ-01, INPV-01, -05, -07, -11, -12, CLNT-04) et 7 à `oracle-exposition`, dont 2 partiellement (ATHN-01,
-  CRYP-03). Un cas coché sans geste exécuté n'est pas un cas tenu : seuls 5 cas (CONF-07, CONF-12, INFO-02,
-  SESS-02, CLNT-09) sont rendus par un oracle exécuté sans qualification humaine ; une alerte d'`oracle-dast`
-  est un signal à qualifier, et la forge n'en a constaté que trois sur sa cible de fixture (INPV-01, INPV-05,
-  CLNT-01).
+- **Une méthode, avant d'être un outil.** Sur les 39 cas, 19 sont `manuel` seuls : ils décrivent le geste
+  à faire, personne ne les exécute automatiquement. 6 autres restent manuels avec une part relevée par `oracle-dast` :
+  CONF-04, INPV-02, INPV-19 et CLNT-01 par le mode actif, CLNT-07 et SESS-05 par le mode passif. 7 sont confiés à
+  `oracle-dast` en mode actif (ATHZ-01, INPV-01, -05, -07, -11, -12, CLNT-04) et 7 à `oracle-exposition`, dont 2
+  partiellement (ATHN-01, CRYP-03) ; SESS-02, un de ces 7, reçoit un complément du mode passif. Un cas coché sans geste
+  exécuté n'est pas un cas tenu : seuls 5 cas (CONF-07, CONF-12, INFO-02, SESS-02, CLNT-09) sont rendus par un oracle
+  exécuté sans qualification humaine ; une alerte d'`oracle-dast` est un signal à qualifier, et la forge n'en a
+  constaté que six sur ses cibles de fixture : INPV-01, INPV-05 et CLNT-01 en mode actif, SESS-02 (deux règles sur
+  quatre), CLNT-07 et SESS-05 en mode passif.
 - **Couverture partielle assumée.** 2 chapitres entiers, plus les 56 cas nommés des chapitres
   partiellement couverts, sont hors périmètre (listés ci-dessus) : l'absence de constat sur
   ces cas n'est pas un constat d'absence de défaut.

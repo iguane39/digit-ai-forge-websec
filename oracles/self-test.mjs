@@ -1409,5 +1409,77 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2394 : en-têtes à n
   fs.rmSync(dossier, { recursive: true, force: true });
 }
 
+// ── TF-2476 · les règles que wstg-cas.md cite pour oracle-dast sont des règles de l'image épinglée ───────────
+// Classe oracle-perimetre-de-non-mesure-non-publie : wstg-cas.md ne disait pas, cas par cas, ce que relève le
+// mode passif d'oracle-dast (cookies, CORS, jeton CSRF pour SESS-02, CLNT-07 et SESS-05), alors que TF-2460
+// l'avait fait pour le mode actif. Chaque nom de règle cité entre « » dans la colonne « Outillage » d'un cas
+// confié à oracle-dast se rattache au mot de mode (passif, actif) qui le précède dans la cellule ; il doit
+// figurer, avec exactement ce nom, parmi les règles passives (ou actives) de referentiels/zap-regles.json,
+// qui décrit l'image épinglée. Un cas confié au mode passif nomme au moins une règle passive.
+{
+  const lire = (...p) => fs.readFileSync(path.join(HERE, "..", ...p), "utf8");
+  const regles = JSON.parse(lire("referentiels", "zap-regles.json"));
+  const CAS_PASSIFS_ATTENDUS = ["WSTG-SESS-02", "WSTG-CLNT-07", "WSTG-SESS-05"];
+  const defautsReglesDast = (texte, liste) => {
+    const defauts = [];
+    const passives = new Set(Object.values(liste.passives).flat());
+    const actives = new Set(Object.values(liste.actives).flat());
+    const tous = new Set([...passives, ...actives, ...Object.values(liste.autres || {}).flat()]);
+    const passifsParCas = {};
+    for (const ligne of texte.split("\n")) {
+      if (!/^\|\s*\**WSTG-/.test(ligne)) continue;
+      const cellules = ligne.split("|").map((c) => c.trim());
+      const id = (cellules[1] || "").replace(/\*/g, "");
+      const outillage = cellules[cellules.length - 2] || "";
+      if (!/oracle-dast/.test(outillage)) continue;
+      const noms = { passif: [], actif: [] };
+      let mode = null;
+      for (const m of outillage.matchAll(/\b(passif|actif)\b|«\s*([^»]+?)\s*»/g)) {
+        if (m[1]) mode = m[1];
+        else if (mode === null) defauts.push(`${id} cite « ${m[2]} » avant d'avoir nommé son mode`);
+        else noms[mode].push(m[2]);
+      }
+      if (/\bpassif\b/.test(outillage) && noms.passif.length === 0) defauts.push(`${id} confie le mode passif à oracle-dast sans nommer la règle passive qui le lève`);
+      for (const n of noms.passif) if (!passives.has(n)) defauts.push(`${id} cite « ${n} » en mode passif : ce n'est pas une règle passive de l'image ${liste.image.zap}`);
+      for (const n of noms.actif) if (!actives.has(n)) defauts.push(`${id} cite « ${n} » en mode actif : ce n'est pas une règle active de l'image ${liste.image.zap}`);
+      passifsParCas[id] = noms.passif;
+    }
+    for (const id of CAS_PASSIFS_ATTENDUS) {
+      if (!(passifsParCas[id] || []).length) defauts.push(`${id} doit citer au moins une règle passive d'oracle-dast : la décision du 13/11/2026 le recense (cookies, CORS, jeton CSRF)`);
+    }
+    // La section dédiée au mode passif ne cite, entre « », que des règles de l'image.
+    const section = (texte.match(/## Ce que le mode passif d'oracle-dast couvre\r?\n([\s\S]*?)(?=\r?\n## )/) || [])[1];
+    if (section === undefined) defauts.push("section « Ce que le mode passif d'oracle-dast couvre » absente");
+    // un nom coupé par un retour à la ligne du texte reste le même nom : les blancs se normalisent avant la comparaison
+    else for (const m of section.matchAll(/«\s*([^»]+?)\s*»/g)) { const nom = m[1].replace(/\s+/g, " "); if (!tous.has(nom)) defauts.push(`la section du mode passif cite « ${nom} » : ce n'est une règle d'aucun add-on listé de l'image`); }
+    return defauts;
+  };
+  const reel = lire("referentiels", "wstg-cas.md");
+  const defReel = defautsReglesDast(reel, regles);
+  ok(defReel.length === 0, `TF-2476 · VERT — chaque règle que wstg-cas.md cite pour oracle-dast est une règle de l'image épinglée, au bon mode, et SESS-02, CLNT-07 et SESS-05 nomment une règle passive${defReel.length ? " (défauts : " + defReel.join(" ; ") + ")" : ""}`);
+  const casPassifs = reel.split("\n").filter((l) => /^\|\s*\**WSTG-/.test(l) && /oracle-dast \(passif/.test(l)).length;
+  ok(casPassifs >= 4, `TF-2476 · le référentiel confie ${casPassifs} cas au mode passif d'oracle-dast (les trois de la décision, plus INPV-01)`);
+
+  // ROUGE : le nom cité n'est pas celui de l'image (faute de frappe ou règle retirée)
+  const faute = reel.replace("« Cookie No HttpOnly Flag »", "« Cookie Sans HttpOnly »");
+  ok(faute !== reel && defautsReglesDast(faute, regles).some((d) => /SESS-02 cite « Cookie Sans HttpOnly » en mode passif/.test(d)), "TF-2476 · ROUGE — un nom de règle passive qui n'est pas celui de l'image est refusé");
+  // ROUGE : une règle active citée comme passive
+  const melange = reel.replace("« Absence of Anti-CSRF Tokens »", "« SQL Injection »");
+  ok(melange !== reel && defautsReglesDast(melange, regles).some((d) => /SESS-05 cite « SQL Injection » en mode passif/.test(d)), "TF-2476 · ROUGE — une règle active citée au mode passif est refusée");
+  // ROUGE : l'état d'avant la décision, SESS-05 sans règle passive
+  const avant = reel.replace(/^(\| WSTG-SESS-05 \|.*\| )[^|]*\|\s*$/m, "$1manuel |");
+  ok(avant !== reel && defautsReglesDast(avant, regles).some((d) => /WSTG-SESS-05 doit citer au moins une règle passive/.test(d)), "TF-2476 · ROUGE — SESS-05 sans règle passive nommée (l'état d'avant) est refusé");
+  // ROUGE : un mode passif annoncé sans règle
+  const sansRegle = reel.replace("passif : règles « User Controllable HTML Element Attribute (Potential XSS) » et « User Controllable JavaScript Event (XSS) », qui signalent un reflet, exploitation non prouvée", "passif : reflet signalé, exploitation non prouvée");
+  ok(sansRegle !== reel && defautsReglesDast(sansRegle, regles).some((d) => /WSTG-INPV-01 confie le mode passif à oracle-dast sans nommer/.test(d)), "TF-2476 · ROUGE — un cas confié au mode passif sans règle nommée est refusé");
+  // ROUGE : la règle cesse d'exister dans l'image (la liste est relue), le référentiel qui la cite est refusé
+  const listeSansCsrf = JSON.parse(JSON.stringify(regles));
+  for (const k of Object.keys(listeSansCsrf.passives)) listeSansCsrf.passives[k] = listeSansCsrf.passives[k].filter((n) => n !== "Absence of Anti-CSRF Tokens");
+  ok(defautsReglesDast(reel, listeSansCsrf).some((d) => /SESS-05 cite « Absence of Anti-CSRF Tokens » en mode passif/.test(d)), "TF-2476 · ROUGE — une règle absente de la liste de l'image, citée par le référentiel, est refusée");
+  // ROUGE : une règle citée dans la section du mode passif qui n'est d'aucun add-on listé
+  const sectionFausse = reel.replace(/(## Ce que le mode passif d'oracle-dast couvre\r?\n)/, "$1\nLa règle « Règle Inventée » ne figure dans aucun add-on.\n");
+  ok(sectionFausse !== reel && defautsReglesDast(sectionFausse, regles).some((d) => /section du mode passif cite « Règle Inventée »/.test(d)), "TF-2476 · ROUGE — la section du mode passif qui cite une règle inventée est refusée");
+}
+
 console.log(`\nSelf-test forge-websec : ${pass} PASS, ${echec} FAIL, ${note} SKIP motivé (outillage/réseau du poste, non comptés)`);
 process.exit(echec ? 1 : 0);

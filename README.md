@@ -207,7 +207,7 @@ par `--seuils <f.json>`.
 
 | Mode | Commande cherchée | Ce qui part vers la cible |
 |---|---|---|
-| `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker épinglée (`zap-baseline.py`) | l'araignée et les règles passives, aucune attaque |
+| `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker épinglée (`zap-baseline.py`) | l'araignée et les règles passives, aucune règle d'attaque ; l'araignée **soumet les formulaires** qu'elle trouve (un POST, constaté le 13/11/2026), seule l'option `exclusions` du mandat l'en empêche |
 | `actif` (`actif_autorise: true`) | `zap-full-scan.py`, `zap.sh` ou `zap.bat`, sinon l'image Docker épinglée (`zap-full-scan.py`) | l'araignée, puis l'attaque active de chaque URL trouvée |
 
 Un mode ne se rabat jamais sur l'autre (TF-2444). Un ZAP qui ne sait que `baseline` ne rend pas un
@@ -374,6 +374,16 @@ option) en reçoit et atteint la route que C (actif avec options) n'atteint jama
 toute requête privée et un pic de requêtes par seconde sous la borne. Compter plusieurs minutes par
 scénario (ZAP démarre et se met à jour avant de balayer).
 
+La preuve **avec le vrai ZAP** du mode passif (TF-2476) est un second banc, hors self-test :
+
+```
+node scripts/preuve-dast-passif.mjs [--oracle <oracle-dast.mjs>]
+```
+
+Même image épinglée, déjà présente. Il démarre `fixtures/dast/cible-passive.mjs` (cookie sans attribut, en-têtes CORS ouverts,
+formulaire sans jeton) sur `127.0.0.1`, lance la passe passive et rend, cas par cas (SESS-02, CLNT-07, SESS-05), si la règle de
+l'image a été levée : `referentiels/wstg-cas.md` en reprend le résultat dans sa section du mode passif. Compter une minute.
+
 ## Limites explicites (ce que la v0 n'est pas)
 
 - **DAST : dette D-W1 CLOSE le 14/08/2026 (TF-0206), exécution réellement prouvée.**
@@ -445,9 +455,10 @@ oracles/
   oracle-sca.mjs          enveloppe npm audit / pip-audit (ou uvx pip-audit ; uv.lock, poetry.lock) en verdict machine normalisé
   oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils
   oracle-workflows.mjs    juge les workflows GitHub Actions — 5 règles WF-1..WF-5, lecteur YAML natif
-  self-test.mjs           rejeu intégral à double sens (229 contrôles le 12/11/2026)
+  self-test.mjs           rejeu intégral à double sens (260 contrôles le 13/11/2026)
 scripts/
   preuve-dast-actif.mjs   banc réel du mode actif d'oracle-dast : vrai ZAP (Docker) contre la cible locale de fixture, hors self-test
+  preuve-dast-passif.mjs  banc réel du mode passif d'oracle-dast : vrai ZAP (Docker) contre la cible passive de fixture, hors self-test
   lire-regles-zap.mjs     lit les règles de l'image ZAP épinglée (sans réseau) et écrit referentiels/zap-regles.json ; --verifier compare
   capturer.mjs            capture réelle fetch(url) → JSON d'entrée d'oracle-exposition
   caviarder-cookies.mjs   retire la valeur d'un Set-Cookie, nom et attributs gardés (appelé par capturer.mjs)
@@ -466,7 +477,8 @@ fixtures/
                           actif avec options), rapports ZAP synthétiques (propre/vulnérable), seuils
                           desserrés, zap-simule.mjs (ZAP simulé du self-test), docker-simule.mjs (Docker
                           simulé : image présente ou non, ligne de commande enregistrée), deux rapports
-                          à règle hors image ou à variante, et cible-locale.mjs (la cible de fixture du banc réel)
+                          à règle hors image ou à variante, cible-locale.mjs (la cible de fixture du banc réel
+                          du mode actif) et cible-passive.mjs (celle du banc du mode passif)
   workflows/              workflows synthétiques : 2 verts, 9 rouges (une par règle au moins),
                           1 mineur, un dépôt fictif avec verrou actions.lock
 ```
