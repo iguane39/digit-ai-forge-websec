@@ -5,6 +5,20 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-14 — `oracle-sca` 0.2.3 : un délai dépassé n'est plus un outil absent, et le délai de la sonde se règle (TF-2413, TF-2417)
+
+- **Effet** : la sonde `<outil> --version` avait 10 s en dur et rendait un simple oui/non : sur un poste chargé, `npm --version` a mis
+  39 s puis 20 s (npm 11.13.0 installé, 10/11/2026) et l'oracle rendait deux SKIP « npm absent du poste ». La sonde rend maintenant
+  l'état et la cause : « absent » (la commande n'existe pas), « délai » (« `npm --version` n'a pas répondu en n s (délai dépassé…) »,
+  remède : rejouer avec un délai plus long) ou « erreur » (code de sortie nommé). Même distinction pour `pip-audit` et `uvx` : quand aucune
+  voie pip ne sert, le manque dit la cause de chaque sonde, et « ni pip-audit ni uvx sur le poste » reste réservé à l'absence des deux.
+  Le délai (10 s par défaut, inchangé) se règle en secondes par `WEBSEC_SCA_DELAI_OUTIL_S` ; une valeur illisible est refusée (FAIL, la
+  variable nommée) au lieu d'être remplacée en silence. `WEBSEC_SCA_NPM` désigne la commande npm de la recette, comme les deux variables
+  pip existantes (la sonde et l'audit la lisent).
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2413 / TF-2417, avec l'outil simulé rendu lent (`WEBSEC_SIM_LENT_MS`) ou en erreur
+  (`WEBSEC_SIM_VERSION_CODE`). Mesuré le 14/11/2026 sur un pip-audit et un uvx simulés qui répondent en 12 s : l'ancien oracle rend
+  « ni pip-audit ni uvx sur le poste » (ROUGE), le nouveau avec un délai de 1 s nomme le délai de chaque voie.
+
 ## 2026-11-14 — `capturer.mjs` lit le fichier de capture en second argument, comme la table d'usage du README le prescrit (TF-2518)
 
 - **Effet** : la table d'usage prescrivait `node scripts\capturer.mjs <url> <capture.json>`, forme que le script ne lisait pas : le second

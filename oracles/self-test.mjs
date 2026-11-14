@@ -237,6 +237,62 @@ if (!pipVoie) {
   try { fs.rmSync(traceDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* nettoyage du banc : un verrou Windows passager n'est pas un échec de preuve */ }
 }
 
+// ── un délai dépassé n'est pas un outil absent ; le délai de la sonde est réglable (TF-2413, TF-2417) ──
+// Le 10/11/2026, `npm --version` a mis 39 s puis 20 s sur un poste chargé, npm 11.13.0 installé, et l'oracle a rendu deux
+// SKIP « npm absent du poste ». Le banc joue le même outil SIMULÉ lent (WEBSEC_SIM_LENT_MS) sur les deux écosystèmes :
+// ROUGE si la cause nommée est « absent » ou ne cite pas le délai, VERT quand la variable de délai laisse l'outil répondre.
+{
+  const SIM = FX("sca", "outils", "outil-simule.mjs");
+  const ABSENT = path.join(os.tmpdir(), "websec-outil-absent");
+  const causes = (r) => (r.manques || []).map((m) => m.cause).join(" | ");
+  const remedes = (r) => (r.manques || []).map((m) => m.remede).join(" | ");
+  const VAR = "WEBSEC_SCA_DELAI_OUTIL_S";
+  const npmSim = (env) => ({ WEBSEC_SCA_NPM: SIM, ...env });
+  const pipSim = (env) => ({ WEBSEC_SCA_PIP_AUDIT: SIM, WEBSEC_SCA_UVX: SIM, ...env });
+
+  // npm lent (2,5 s), délai de la sonde ramené à 1 s : la sonde expire, la cause nommée est le délai, jamais l'absence.
+  let r = runJson(ORACLE_SCA, [FX("sca", "npm-clean")], npmSim({ WEBSEC_SIM_LENT_MS: "2500", [VAR]: "1" }));
+  ok(r.verdict === "SKIP" && /n'a pas répondu en 1 s/.test(causes(r)) && /délai dépassé/.test(causes(r)) && !/absent du poste/.test(causes(r)) && causes(r).includes(VAR),
+    `ROUGE · npm qui répond en 2,5 s avec un délai de sonde de 1 s → SKIP dont le manque nomme le délai dépassé et la variable, pas « absent du poste » (obtenu ${r.verdict}, « ${causes(r)} »)`);
+  ok(remedes(r).includes(`${VAR}=`) && !/installer Node/.test(remedes(r)),
+    `ROUGE · le remède d'un délai dépassé propose de régler le délai, pas d'installer l'outil (obtenu « ${remedes(r)} »)`);
+  // le remède joué : le délai que le remède nomme laisse l'outil répondre, la sonde est passée (l'audit simulé, lui, échoue ensuite)
+  r = runJson(ORACLE_SCA, [FX("sca", "npm-clean")], npmSim({ WEBSEC_SIM_LENT_MS: "2500", [VAR]: "6" }));
+  ok(!/n'a pas répondu/.test(causes(r)) && !/absent/.test(causes(r)) && /npm présent mais audit indisponible/.test(causes(r)),
+    `VERT · le même npm lent avec le délai de 6 s (le remède joué) passe la sonde et atteint l'audit (obtenu « ${causes(r)} »)`);
+  r = runJson(ORACLE_SCA, [FX("sca", "npm-clean")], npmSim({ WEBSEC_SIM_LENT_MS: "1500" }));
+  ok(/npm présent mais audit indisponible/.test(causes(r)),
+    `VERT · sans variable, le délai par défaut reste de 10 s : un npm qui répond en 1,5 s passe la sonde (obtenu « ${causes(r)} »)`);
+  // un outil réellement absent garde son message et son remède
+  r = runJson(ORACLE_SCA, [FX("sca", "npm-clean")], npmSim({ WEBSEC_SCA_NPM: ABSENT }));
+  ok(r.verdict === "SKIP" && /npm absent du poste/.test(causes(r)) && /installer Node\.js\/npm/.test(remedes(r)) && !/délai/.test(causes(r)),
+    `VERT · un npm réellement absent reste « absent du poste », avec le remède d'installation (obtenu « ${causes(r)} »)`);
+  // un outil qui répond en erreur n'est ni absent ni lent : le code est nommé
+  r = runJson(ORACLE_SCA, [FX("sca", "npm-clean")], npmSim({ WEBSEC_SIM_VERSION_CODE: "3" }));
+  ok(r.verdict === "SKIP" && /rend le code 3/.test(causes(r)) && !/n'a pas répondu/.test(causes(r)),
+    `VERT · un npm qui répond par le code 3 est nommé tel quel, ni absent ni lent (obtenu « ${causes(r)} »)`);
+
+  // pip : les deux voies lentes (2,5 s), délai de 1 s → la cause est le délai, plus « ni pip-audit ni uvx sur le poste »
+  r = runJson(ORACLE_SCA, [FX("sca", "pip-clean")], pipSim({ WEBSEC_SIM_LENT_MS: "2500", [VAR]: "1" }));
+  ok(r.verdict === "SKIP" && /pip-audit --version » n'a pas répondu en 1 s/.test(causes(r)) && /uvx --version » n'a pas répondu en 1 s/.test(causes(r)) && !/ni pip-audit ni uvx/.test(causes(r)),
+    `ROUGE · pip-audit et uvx lents avec un délai de 1 s → SKIP dont le manque nomme le délai de CHAQUE voie, pas « ni pip-audit ni uvx » (obtenu « ${causes(r)} »)`);
+  ok(remedes(r).includes(`${VAR}=`), `ROUGE · le remède pip d'un délai dépassé propose de régler le délai (obtenu « ${remedes(r)} »)`);
+  // mélange : pip-audit réellement absent, uvx lent → chaque voie dit sa propre cause
+  r = runJson(ORACLE_SCA, [FX("sca", "pip-clean")], { WEBSEC_SCA_PIP_AUDIT: ABSENT, WEBSEC_SCA_UVX: SIM, WEBSEC_SIM_LENT_MS: "2500", [VAR]: "1" });
+  ok(/pip-audit absent du poste/.test(causes(r)) && /uvx --version » n'a pas répondu en 1 s/.test(causes(r)),
+    `VERT · pip-audit absent et uvx lent : chaque voie nomme sa cause (obtenu « ${causes(r)} »)`);
+  r = runJson(ORACLE_SCA, [FX("sca", "pip-clean")], pipSim({ WEBSEC_SIM_LENT_MS: "2500", [VAR]: "6" }));
+  ok(r.verdict === "PASS" && (r.manques || []).length === 0,
+    `VERT · les mêmes voies lentes avec le délai de 6 s, le remède joué → l'audit a lieu, PASS (obtenu ${r.verdict}, « ${causes(r)} »)`);
+
+  // une valeur de délai illisible est refusée net, jamais remplacée en silence par le défaut
+  for (const valeur of ["abc", "0", "-5"]) {
+    r = runJson(ORACLE_SCA, [FX("sca", "npm-clean")], npmSim({ [VAR]: valeur }));
+    ok(r.verdict === "FAIL" && (r.findings || []).some((f) => f.sev === "bloquant" && f.msg.includes(VAR)),
+      `${VAR}=${valeur} → FAIL qui nomme la variable, aucun défaut implicite (obtenu ${r.verdict})`);
+  }
+}
+
 // ── verrous avec l'outil RÉEL du poste (pip-audit, sinon uvx) et le réseau ───────
 {
   if (!pipVoie) {

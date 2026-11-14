@@ -182,7 +182,14 @@ motivé, jamais un `PASS` silencieux — c'est une règle dure du mandat (TF-012
 `seuils_appliques` de la sortie dit toujours si le seuil vient d'un fichier `--seuils` ou du
 défaut embarqué. `WEBSEC_SCA_PIP_AUDIT` et `WEBSEC_SCA_UVX` désignent une commande à la place
 de `pip-audit` / `uvx` (un chemin `.mjs` est joué par node ; un chemin injouable simule
-l'absence) : c'est ce que la recette emploie pour rejouer les deux voies sans rien installer.
+l'absence) : c'est ce que la recette emploie pour rejouer les deux voies sans rien installer ;
+`WEBSEC_SCA_NPM` fait de même pour npm.
+
+La sonde de disponibilité d'un outil (`npm --version`, `pip-audit --version`, `uvx --version`) dispose de **10 s**, réglables en
+secondes par `WEBSEC_SCA_DELAI_OUTIL_S` (un nombre strictement positif, sinon l'oracle rend `FAIL` et nomme la variable). Un outil
+qui ne répond pas dans ce délai n'est pas déclaré absent : le manque dit « n'a pas répondu en n s (délai dépassé) » et son remède
+propose de rejouer avec un délai plus long. « absent du poste » reste réservé à une commande qui n'existe pas, et un code de
+sortie non nul se nomme avec son code (TF-2413, TF-2417 : `npm --version` a mis 39 s puis 20 s sur un poste chargé, le 10/11/2026).
 
 ### `oracle-dast.mjs` — enveloppe OWASP ZAP, garde-fou dual-use fail-closed
 

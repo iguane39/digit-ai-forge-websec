@@ -27,7 +27,9 @@
 //
 // Surcharge de l'outillage, pour la recette (rien n'est installé) : WEBSEC_SCA_PIP_AUDIT et
 // WEBSEC_SCA_UVX désignent la commande à utiliser à la place de `pip-audit` / `uvx` (un chemin
-// qui finit par .mjs est joué par node ; un chemin injouable simule l'absence de l'outil).
+// qui finit par .mjs est joué par node ; un chemin injouable simule l'absence de l'outil) ; WEBSEC_SCA_NPM fait de même
+// pour npm (sonde et audit). Une sonde « <outil> --version » dispose de 10 s, réglables en secondes par
+// WEBSEC_SCA_DELAI_OUTIL_S (0.2.3, TF-2413 et TF-2417) ; un délai dépassé se nomme tel quel au manque, jamais « absent du poste ».
 //
 // Contrat : JSON {oracle, version, artefact, verdict, findings, non_juge, synthese,
 // seuils_appliques, manques[, motif]} · exit 0 (PASS) / 1 (FAIL) / 2 (SKIP — rien n'a pu être audité).
@@ -37,7 +39,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const VERSION = "0.2.2";
+const VERSION = "0.2.3";
 const ORACLE = "oracle-sca";
 // Version de pip-audit nommée dans le remède d'un SKIP « outil absent » (TF-2398) : celle mesurée
 // sur le poste le 12/11/2026 (`pip-audit --version` → 2.10.1). Le remède donne une commande, pas un vœu.
@@ -73,6 +75,17 @@ if (seuilsPath) {
   }
 }
 
+// Délai de la sonde de disponibilité d'un outil (TF-2413, TF-2417) : 10 s par défaut, réglable en secondes par
+// WEBSEC_SCA_DELAI_OUTIL_S pour un poste lent. Une valeur qui n'est pas un nombre strictement positif est refusée net
+// (même règle que des seuils illisibles), jamais remplacée en silence par le défaut.
+const VARIABLE_DELAI_SONDE = "WEBSEC_SCA_DELAI_OUTIL_S";
+let delaiSondeS = 10;
+if (process.env[VARIABLE_DELAI_SONDE] !== undefined && process.env[VARIABLE_DELAI_SONDE] !== "") {
+  const n = Number(process.env[VARIABLE_DELAI_SONDE]);
+  if (Number.isFinite(n) && n > 0) delaiSondeS = n;
+  else add("bloquant", "—", `${VARIABLE_DELAI_SONDE} illisible (« ${process.env[VARIABLE_DELAI_SONDE]} ») : un nombre de secondes strictement positif est attendu`, VARIABLE_DELAI_SONDE);
+}
+
 // Un outil est une commande, des arguments de tête et un mode de lancement. Par défaut, le nom nu
 // (shell sous Windows pour npm.cmd) ; une variable d'environnement le surcharge pour la recette.
 function resoudre(nom, variable, delai) {
@@ -84,11 +97,22 @@ function resoudre(nom, variable, delai) {
   return { nom, cmd: nom, pre: [], shell: nom === "npm" && process.platform === "win32", delai };
 }
 
+// La sonde « <outil> --version » rend l'état ET la cause, jamais un simple oui/non (TF-2413, TF-2417) : un outil lent à répondre
+// n'est pas un outil absent. Le 10/11/2026, `npm --version` a pris 39 s puis 20 s sur un poste chargé, avec npm 11.13.0 installé,
+// et l'oracle a rendu deux SKIP « npm absent du poste ». `cause` : « absent » (la commande n'existe pas), « delai » (pas de
+// réponse dans le délai de la sonde), « erreur » (elle répond, mais par un code non nul). `detail` est la clause qui nomme la
+// vraie cause, citée telle quelle dans le manque.
 function outilDisponible(outil, versionArg = "--version") {
+  const sonde = `« ${outil.nom} ${versionArg} »`;
   try {
-    const r = spawnSync(outil.cmd, [...outil.pre, versionArg], { encoding: "utf8", timeout: 10000, shell: outil.shell });
-    return r.error === undefined && r.status === 0;
-  } catch { return false; }
+    const r = spawnSync(outil.cmd, [...outil.pre, versionArg], { encoding: "utf8", timeout: delaiSondeS * 1000, shell: outil.shell });
+    if (r.error && r.error.code === "ETIMEDOUT") {
+      return { ok: false, cause: "delai", detail: `${sonde} n'a pas répondu en ${delaiSondeS} s (délai dépassé : ${outil.nom} est peut-être présent sur un poste lent ; ${VARIABLE_DELAI_SONDE} règle ce délai)` };
+    }
+    if (r.error) return { ok: false, cause: "absent", detail: `${outil.nom} absent du poste` };
+    if (r.status !== 0) return { ok: false, cause: "erreur", detail: `${sonde} rend le code ${r.status} (${outil.nom} absent ou en erreur)` };
+    return { ok: true, cause: null, detail: null };
+  } catch { return { ok: false, cause: "absent", detail: `${outil.nom} absent du poste` }; }
 }
 
 const synthese = {};
@@ -134,10 +158,15 @@ let ecosystemesAudites = 0;
 
 // ── npm ────────────────────────────────────────────────────────────────────
 if (fs.existsSync(npmLock) && fs.existsSync(npmManifest)) {
-  if (!outilDisponible(resoudre("npm"))) {
-    manque("npm", npmLock, "package-lock.json présent mais npm absent du poste — écosystème npm non audité", "installer Node.js/npm (geste humain, l'oracle n'installe rien)");
+  const npm = resoudre("npm", "WEBSEC_SCA_NPM");
+  const sondeNpm = outilDisponible(npm);
+  if (!sondeNpm.ok) {
+    manque("npm", npmLock, `package-lock.json présent mais ${sondeNpm.detail} — écosystème npm non audité`,
+      sondeNpm.cause === "delai" ? `rejouer avec un délai plus long (${VARIABLE_DELAI_SONDE}=60 par exemple) : l'outil n'est pas déclaré absent`
+        : sondeNpm.cause === "erreur" ? "vérifier que « npm --version » s'exécute sur le poste (geste humain, l'oracle n'installe rien)"
+          : "installer Node.js/npm (geste humain, l'oracle n'installe rien)");
   } else {
-    const r = spawnSync("npm", ["audit", "--package-lock-only", "--json"], { cwd: cible, encoding: "utf8", timeout: 60000, shell: process.platform === "win32" });
+    const r = spawnSync(npm.cmd, [...npm.pre, "audit", "--package-lock-only", "--json"], { cwd: cible, encoding: "utf8", timeout: 60000, shell: npm.shell });
     let rapport = null;
     try { rapport = JSON.parse(r.stdout); } catch { /* rapport non-JSON (registre injoignable, erreur réseau) */ }
     if (!rapport || !rapport.metadata || !rapport.metadata.vulnerabilities) {
@@ -169,13 +198,17 @@ const DELAI_PIP_AUDIT = 240000;
 const pipAudit = resoudre("pip-audit", "WEBSEC_SCA_PIP_AUDIT", DELAI_PIP_AUDIT);
 const uvx = resoudre("uvx", "WEBSEC_SCA_UVX", DELAI_PIP_AUDIT);
 let voieMemo;
+const sondesPip = []; // ce que chaque sonde a répondu, pour nommer la vraie cause quand aucune voie ne sert (TF-2413)
 function voiePip() {
   if (voieMemo !== undefined) return voieMemo;
-  if (outilDisponible(pipAudit)) voieMemo = { libelle: "pip-audit", ...pipAudit };
-  // L'appel uvx est épinglé à la version du remède (TF-2455) : sans `--from`, uvx prend la dernière version publiée
-  // et le verdict changerait avec elle. `--from` s'écrit pareil sur toute version d'uv.
-  else if (outilDisponible(uvx)) voieMemo = { libelle: "uvx pip-audit", ...uvx, pre: [...uvx.pre, "--from", PIP_AUDIT_EPINGLE, "pip-audit"] };
-  else voieMemo = null;
+  sondesPip.push(outilDisponible(pipAudit));
+  if (sondesPip[0].ok) voieMemo = { libelle: "pip-audit", ...pipAudit };
+  else {
+    sondesPip.push(outilDisponible(uvx));
+    // L'appel uvx est épinglé à la version du remède (TF-2455) : sans `--from`, uvx prend la dernière version publiée
+    // et le verdict changerait avec elle. `--from` s'écrit pareil sur toute version d'uv.
+    voieMemo = sondesPip[1].ok ? { libelle: "uvx pip-audit", ...uvx, pre: [...uvx.pre, "--from", PIP_AUDIT_EPINGLE, "pip-audit"] } : null;
+  }
   return voieMemo;
 }
 
@@ -244,6 +277,13 @@ let pipDelai = null;
 for (const s of sourcesPip) {
   const base = path.basename(s.fichier);
   const voie = voiePip();
+  if (!voie && sondesPip.some((x) => x.cause !== "absent")) {
+    // Au moins une sonde n'a pas dit « absent » (délai dépassé, code non nul) : la cause nommée est celle que les sondes ont rendue (TF-2413).
+    manque("pip", s.fichier, `${base} présent mais aucune voie d'audit ne répond : ${sondesPip.map((x) => x.detail).join(" ; ")} — écosystème pip non audité`,
+      sondesPip.some((x) => x.cause === "delai") ? `rejouer avec un délai plus long (${VARIABLE_DELAI_SONDE}=60 par exemple) : l'outil n'est pas déclaré absent`
+        : "vérifier que « pip-audit --version » ou « uvx --version » s'exécute sur le poste (geste humain, l'oracle n'installe rien)");
+    continue;
+  }
   if (!voie) {
     manque("pip", s.fichier, `${base} présent mais ni pip-audit ni uvx sur le poste — écosystème pip non audité`, `installer l'outil épinglé, par « pip install ${PIP_AUDIT_EPINGLE} » ou « uv tool install ${PIP_AUDIT_EPINGLE} » ; ou installer uv, qui fournit uvx (« uvx pip-audit » est alors lancé sans installation globale) — geste humain, l'oracle n'installe rien`);
     continue;

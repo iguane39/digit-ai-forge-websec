@@ -14,6 +14,8 @@
 //                                   refuse ce fichier avec --no-deps)
 //   WEBSEC_SIM_ECHEC=1            → pas de JSON, message d'erreur réseau, exit 1
 //   WEBSEC_SIM_TRACE=<fichier>    → ajoute une ligne JSON par appel : {mode, epingle, argv}
+//   WEBSEC_SIM_LENT_MS=<n>        → --version répond après n ms (poste lent, TF-2413 / TF-2417)
+//   WEBSEC_SIM_VERSION_CODE=<n>   → --version sort avec le code n au lieu de 0 (outil en erreur)
 import fs from "node:fs";
 
 let argv = process.argv.slice(2);
@@ -26,7 +28,11 @@ else if (argv[0] === "pip-audit") { mode = "uvx"; argv = argv.slice(1); }
 
 if (process.env.WEBSEC_SIM_TRACE) fs.appendFileSync(process.env.WEBSEC_SIM_TRACE, JSON.stringify({ mode, epingle, argv }) + "\n");
 
-if (argv.includes("--version")) { console.log("outil-simule 0.0"); process.exit(0); }
+if (argv.includes("--version")) {
+  if (process.env.WEBSEC_SIM_LENT_MS) await new Promise((r) => setTimeout(r, Number(process.env.WEBSEC_SIM_LENT_MS)));
+  console.log("outil-simule 0.0");
+  process.exit(Number(process.env.WEBSEC_SIM_VERSION_CODE || 0));
+}
 
 if (process.env.WEBSEC_SIM_ECHEC === "1") {
   process.stderr.write("ERROR: base d'avisos injoignable (échec simulé)\n");
