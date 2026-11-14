@@ -4,9 +4,10 @@
 // présente, jamais téléchargée) en mode passif contre UNE cible : fixtures/dast/cible-passive.mjs, démarrée
 // ici sur 127.0.0.1, joignable du conteneur par host.docker.internal. Aucune autre cible n'existe dans ce
 // script. Deux lectures :
-//   · le JOURNAL de la cible : une passe passive ne lui envoie rien hors de ses routes connues. Elle lui envoie
-//     pourtant un POST : l'araignée soumet le formulaire de /connexion (constaté le 13/11/2026). Le mode passif
-//     n'attaque pas, mais il n'est pas en lecture seule : un formulaire qui agit se protège par `exclusions` ;
+//   · le JOURNAL de la cible : une passe passive ne lui envoie rien hors de ses routes connues, et AUCUN POST
+//     (TF-2498). Le 13/11/2026, avant ce réglage, l'araignée soumettait le formulaire de /connexion ; depuis
+//     `oracle-dast` 0.3.2 le mode passif passe `spider.processform=false` et `spider.postform=false` à ZAP, et
+//     cette preuve assertit qu'aucune requête POST n'atteint la cible (le vrai ZAP lit ces réglages, ou non) ;
 //   · les ALERTES du verdict, nom par nom : ce que ZAP relève sans attaquer. Les seuils sont posés à 0 pour
 //     que les alertes de risque bas (cookies) figurent au verdict.
 // Il rend, pour chaque cas WSTG que referentiels/wstg-cas.md confie au mode passif (SESS-02, CLNT-07, SESS-05),
@@ -93,7 +94,7 @@ ok(j && j.verdict && j.synthese && j.synthese.balayage && j.synthese.balayage.sc
 ok(j && j.synthese && j.synthese.balayage && j.synthese.balayage.image && j.synthese.balayage.image.epinglee === true && /^coupée/.test(j.synthese.balayage.maj_modules), "l'image est épinglée et la mise à jour des modules coupée, consignées au verdict");
 ok(requetes.length > 0, `la cible a reçu la passe d'araignée (${requetes.length} requête(s))`);
 ok(sondes.length === 0, `aucune sonde : la cible n'a reçu aucune requête hors de ses routes connues (obtenu ${sondes.length} : ${sondes.map((s) => `${s.methode} ${s.url}`).join(", ") || "aucune"})`);
-ok(soumissions.every((s) => s.url === "/connexion"), `les seuls POST sont la soumission du formulaire de /connexion par l'araignée (obtenu ${soumissions.length} : ${soumissions.map((s) => `${s.url} corps « ${s.corps} »`).join(" ; ") || "aucun"})`);
+ok(soumissions.length === 0, `aucune requête POST n'atteint la cible : l'araignée ne soumet aucun formulaire (obtenu ${soumissions.length} : ${soumissions.map((s) => `${s.url} corps « ${s.corps} »`).join(" ; ") || "aucun"})`);
 ok(hors.length === 0, `toute alerte levée est une règle de l'image épinglée (hors liste : ${hors.join(", ") || "aucune"})`);
 for (const c of resultat.filter((r) => r.constate)) ok(true, `${c.cas} : « ${c.regle} » levée (${c.ce_que_la_cible_offre})`);
 

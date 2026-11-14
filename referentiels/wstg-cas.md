@@ -1,7 +1,7 @@
 ---
-version: 0.2.3
+version: 0.2.4
 challenge_date: 2026-08-14
-oracle_dast: 0.3.1
+oracle_dast: 0.3.2
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
@@ -217,9 +217,17 @@ tourne pas.
 
 Le mode passif lance `zap-baseline.py` ou l'image Docker épinglée : l'araignée parcourt la cible et les règles passives lisent
 chaque réponse, sans règle d'attaque active. Il reste soumis au garde-fou d'autorisation, et `actif_autorise` n'y est pas exigé.
-**Passif ne veut pas dire lecture seule.** Mesuré le 13/11/2026 sur une cible de fixture à formulaire, l'araignée soumet le
-formulaire : un POST vers `/connexion`, corps `identifiant=ZAP&secret=ZAP`, valeurs choisies par ZAP. Seule l'option `exclusions`
-du mandat empêche cette soumission pour un chemin donné ; un formulaire dont l'envoi agit (création, suppression) s'y déclare.
+**Le mode passif ne soumet aucun formulaire** (`oracle-dast` 0.3.2, TF-2498, 14/11/2026). Mesuré le 13/11/2026 sur une cible de
+fixture à formulaire, l'araignée de ZAP soumettait le formulaire : un POST vers `/connexion`, corps `identifiant=ZAP&secret=ZAP`,
+valeurs choisies par ZAP, et seule l'option `exclusions` du mandat l'en empêchait. L'oracle passe maintenant à ZAP, en mode passif
+seulement, `spider.processform=false` et `spider.postform=false` : l'araignée ne traite ni n'envoie aucun formulaire, et le verdict
+le consigne (`synthese.balayage.formulaires`). Le formulaire reste lu : la page qui le porte est parcourue, les règles passives
+(SESS-05, « Absence of Anti-CSRF Tokens ») le voient toujours dans la réponse, il n'est seulement pas envoyé. Le mode actif garde le
+comportement de ZAP, sous `actif_autorise: true` ; seule `exclusions` y empêche l'envoi d'un formulaire dont l'envoi agit (création,
+suppression). **Ce qui est prouvé, et ce qui ne l'est pas** : le self-test prouve, avec un ZAP simulé qui lit ces deux réglages, qu'aucune
+requête POST n'atteint la cible de fixture en mode passif alors que le mode actif en envoie une ; il ne prouve pas que le vrai ZAP
+les lit de même. `scripts/preuve-dast-passif.mjs` l'assertit (aucun POST) avec le vrai ZAP, et n'a pas été rejouée depuis le changement :
+l'image épinglée n'était pas sur le poste le 14/11/2026. La dernière colonne du tableau ci-dessous (constats du 13/11/2026) date d'avant ce réglage.
 Les alertes de risque bas, dont celles des cookies, sont comptées dans `synthese.zap.alertes` mais ne sont nommées au verdict
 qu'avec un seuil `low: 0` dans `--seuils` ; au seuil par défaut, seules les alertes `high` et `medium` (ici l'absence de jeton
 et l'en-tête CORS) font échouer.

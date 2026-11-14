@@ -15,7 +15,7 @@
 // un échec du self-test, jamais présenté comme une preuve du sens rouge).
 //
 // Exit 0 si tous les contrôles PROUVÉS passent, 1 sinon. À rejouer après toute modification.
-import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -415,8 +415,8 @@ function runDast(args, env) {
   // sens VERT : chaque mode lance SA passe, une seule fois
   {
     const { r, lignes } = lancer(ZAP.baseline, AUTZ("autorisation-valide.json"), "passif");
-    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === "zap-baseline.mjs" && r.synthese.balayage.scan === "passif" && !lignes[0].argv.includes("-z"),
-      `mode passif → la passe baseline, une fois, sans option (obtenu ${r.verdict}, ${lignes.map((l) => l.script).join(",")})`);
+    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === "zap-baseline.mjs" && r.synthese.balayage.scan === "passif" && optionsZ(lignes) === "-config 'spider.processform=false' -config 'spider.postform=false'",
+      `mode passif → la passe baseline, une fois, avec pour seules options les deux réglages d'araignée qui coupent les formulaires (TF-2498) (obtenu ${r.verdict}, ${lignes.map((l) => l.script).join(",")}, « ${optionsZ(lignes)} »)`);
   }
   {
     const { r, lignes } = lancer(ZAP.complet, AUTZ("autorisation-actif.json"), "actif");
@@ -1553,6 +1553,8 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2518 : le fichier se 
         `TF-2477 · VERT — voie Docker sans réglage : l'image épinglée par empreinte part, une fois, jamais l'étiquette stable (obtenu ${r.verdict}, ${run.length} lancement)`);
       ok(/^-silent( |$)/.test(optionsZ(run)) && r.synthese?.balayage?.image?.epinglee === true && /^coupée/.test(r.synthese?.balayage?.maj_modules),
         "TF-2477 · VERT — `-silent` est passé à ZAP (mise à jour des modules coupée) et le verdict le consigne, image épinglée = oui");
+      ok(/^-silent -config 'spider\.processform=false' -config 'spider\.postform=false'$/.test(optionsZ(run)),
+        `TF-2498 · VERT — voie Docker en mode passif : -silent puis les deux réglages qui coupent les formulaires, rien d'autre (obtenu « ${optionsZ(run)} »)`);
       ok(!aRegle(r, "DAST-IMAGE-MOBILE") && !aRegle(r, "DAST-REGLE-HORS-IMAGE") && r.synthese?.zap?.regles_image?.comparees === true,
         "TF-2477 · VERT — image épinglée et alertes toutes listées : ni DAST-IMAGE-MOBILE ni DAST-REGLE-HORS-IMAGE");
     }
@@ -1560,6 +1562,8 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2518 : le fichier se 
       const { r, run } = lancerDocker([imageEpinglee], { WEBSEC_DAST_TEST_ACCES: "Bearer fixture-image" }, "actif", "autorisation-actif-options.json");
       ok(r.verdict === "PASS" && run.length === 1 && run[0].argv.includes("zap-full-scan.py") && /^-silent -config /.test(optionsZ(run)) && optionsZ(run).includes("scanner.delayInMs=200"),
         `TF-2477 · VERT — en mode actif, -silent précède les options du mandat dans -z, qui les porte toujours (obtenu ${r.verdict})`);
+      ok(!/spider\.(processform|postform)/.test(optionsZ(run)),
+        `TF-2498 · le mode actif garde le comportement de ZAP : aucun réglage de formulaire dans -z (obtenu « ${optionsZ(run)} »)`);
     }
     // sens ROUGE : l'étiquette mobile, désignée par l'opérateur, est dite au verdict ; elle n'est jamais le défaut
     {
@@ -1614,6 +1618,52 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2518 : le fichier se 
       `TF-2477 · ROUGE — une liste de règles introuvable est dite (DAST-REGLES-ILLISIBLES), la comparaison n'est pas faite et le verdict ne s'en trouve pas changé (obtenu ${r.verdict})`);
   }
   fs.rmSync(dossier, { recursive: true, force: true });
+}
+
+// ── TF-2498 · le mode passif d'oracle-dast ne soumet aucun formulaire ─────────────────────────────────────────
+// Classe audit-mute-l-arbre-audite : le 13/11/2026, la passe passive du vrai ZAP a POSTÉ le formulaire de /connexion d'une cible de
+// fixture (corps identifiant=ZAP&secret=ZAP) : un mode qui « n'attaque pas » n'était pas en lecture seule. Le banc sert la cible de
+// fixture locale (fixtures/dast/cible-passive.mjs, 127.0.0.1, dans un processus à part qui journalise chaque requête) à un ZAP SIMULÉ
+// qui joue l'araignée selon les réglages que l'oracle lui passe (fixtures/dast/zap-simule.mjs) : ROUGE si une requête POST atteint
+// la cible en mode passif, VERT quand aucune n'arrive alors que la page du formulaire est toujours lue. Le témoin est le mode actif,
+// qui garde son comportement : sans lui, un zéro POST ne prouverait pas que le banc sait en voir un.
+console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2498 : le mode passif ne soumet aucun formulaire)\n");
+{
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), "websec-dast-formulaire-"));
+  const journal = path.join(dossier, "cible.jsonl");
+  const cible = spawn(process.execPath, [FX("dast", "cible-passive.mjs"), "--journal", journal], { stdio: ["ignore", "pipe", "inherit"] });
+  try {
+    const port = await new Promise((resolve, reject) => {
+      cible.stdout.once("data", (d) => resolve(JSON.parse(String(d)).port));
+      cible.once("error", reject);
+      cible.once("exit", (c) => reject(new Error(`cible-passive sortie prématurément (${c})`)));
+    });
+    const simule = (nom) => { const f = path.join(dossier, `${nom}.mjs`); fs.copyFileSync(AUTZ("zap-simule.mjs"), f); return f; };
+    const ZAP = { baseline: simule("zap-baseline"), complet: simule("zap-full-scan") };
+    const lancer = (zap, mode, autorisation) => {
+      fs.rmSync(journal, { force: true });
+      const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ(autorisation), "--mode", mode], {
+        WEBSEC_DAST_ZAP: zap, WEBSEC_DAST_SIMULE_ORIGINE: `http://127.0.0.1:${port}`, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-propre.json"),
+      });
+      const requetes = fs.existsSync(journal) ? fs.readFileSync(journal, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+      return { r, requetes, posts: requetes.filter((q) => q.methode === "POST") };
+    };
+    // témoin : le balayage actif garde le comportement de ZAP, l'araignée envoie le formulaire — le banc sait voir un POST
+    const actif = lancer(ZAP.complet, "actif", "autorisation-actif.json");
+    ok(actif.r.verdict === "PASS" && actif.posts.length === 1 && actif.posts[0].url === "/connexion" && /identifiant=ZAP/.test(actif.posts[0].corps),
+      `TF-2498 · TÉMOIN — le mode actif n'est pas modifié : l'araignée simulée envoie le formulaire, le banc voit ce POST sur /connexion (obtenu ${actif.r.verdict}, ${actif.posts.length} POST)`);
+    // ROUGE puis VERT : le mode passif, mêmes pages, même cible
+    const passif = lancer(ZAP.baseline, "passif", "autorisation-valide.json");
+    ok(passif.r.verdict === "PASS" && passif.posts.length === 0,
+      `TF-2498 · ROUGE — en mode passif aucune requête POST n'atteint la cible : l'araignée ne soumet rien (obtenu ${passif.r.verdict}, ${passif.posts.length} POST : ${passif.posts.map((p) => p.url).join(", ") || "aucun"})`);
+    ok(passif.requetes.some((q) => q.methode === "GET" && q.url === "/connexion"),
+      `TF-2498 · VERT — le formulaire reste LU (GET /connexion) : les règles passives le voient toujours, il n'est seulement pas envoyé (requêtes reçues : ${passif.requetes.map((q) => `${q.methode} ${q.url}`).join(", ")})`);
+    ok(/ni traités ni envoyés/.test(passif.r.synthese?.balayage?.formulaires || "") && /spider\.postform=false/.test(passif.r.synthese?.balayage?.formulaires || "") && /réglage par défaut/.test(actif.r.synthese?.balayage?.formulaires || ""),
+      `TF-2498 · le verdict consigne le traitement des formulaires de chaque mode (obtenu passif « ${passif.r.synthese?.balayage?.formulaires} »)`);
+  } finally {
+    cible.kill();
+    try { fs.rmSync(dossier, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* nettoyage du banc : un verrou Windows passager n'est pas un échec de preuve */ }
+  }
 }
 
 // ── TF-2476 · les règles que wstg-cas.md cite pour oracle-dast sont des règles de l'image épinglée ───────────

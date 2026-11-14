@@ -34,7 +34,8 @@
 // Deux voies, une fois le garde-fou franchi :
 //   --rapport <f.json> : juge un rapport ZAP DÉJÀ produit (aucune émission vers la cible) ;
 //   sinon              : cherche ZAP sur le poste et lance le balayage du MODE demandé :
-//     passif (défaut) → zap-baseline.py (araignée + règles passives, aucune attaque) ;
+//     passif (défaut) → zap-baseline.py (araignée + règles passives, aucune attaque, AUCUN formulaire
+//                       traité ni envoyé : `spider.processform=false` et `spider.postform=false`, TF-2498) ;
 //     actif           → zap-full-scan.py (araignée + attaque active des URL trouvées), ou
 //                       zap.sh / zap.bat (balayage rapide, qui attaque aussi) ; jamais baseline.
 //   Un mode ne se rabat JAMAIS sur l'autre : un ZAP qui ne sait que baseline ne rend pas un
@@ -79,7 +80,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -409,10 +410,18 @@ if (resteFenetreMin < delaiMinutes) {
 const delaiMs = Math.max(1, Math.floor(delaiMinutes * 60000));
 const arrondi = (m) => Math.round(m * 100) / 100;
 
+// Le mode passif ne traite ni n'envoie aucun formulaire (TF-2498) : `spider.processform` coupe le traitement des formulaires par
+// l'araignée, `spider.postform` l'envoi de ceux qui sont en POST. Les deux, pour que l'intention ne dépende pas de la valeur
+// par défaut de l'une.
+const OPTIONS_PASSIF_SANS_FORMULAIRE = ["spider.processform=false", "spider.postform=false"];
+
 synthese.balayage = {
   scan: mode,
   en_tete_acces: enTeteAcces ? { nom: enTeteAcces.nom, valeur: "(masquée)", source: enTeteAcces.source } : null,
   debit, exclusions,
+  formulaires: mode === "passif"
+    ? `ni traités ni envoyés (${OPTIONS_PASSIF_SANS_FORMULAIRE.join(", ")}) : aucune requête POST ne part de l'araignée`
+    : "réglage par défaut de ZAP, non modifié par l'oracle en mode actif (seule `exclusions` empêche l'envoi d'un formulaire)",
   delai_max_minutes: arrondi(delaiMinutes), delai_source: delaiSource,
 };
 
@@ -426,6 +435,11 @@ function optionsZap() {
       `${r}matchstr=${enTeteAcces.nom}`, `${r}regex=false`, `${r}replacement=${enTeteAcces.valeur}`,
       `${r}url=^${echapperRegex(origineCible)}(/.*)?$`);
   }
+  // TF-2498 : le mode passif ne soumet aucun formulaire. L'araignée de ZAP traite sinon les formulaires qu'elle trouve et
+  // POSTE celui de la cible (mesuré le 13/11/2026 : POST /connexion, corps identifiant=ZAP&secret=ZAP) : une passe qui
+  // « n'attaque pas » n'en était pas pour autant en lecture seule. Le mode actif garde le comportement de ZAP, sous l'autorisation
+  // écrite qui l'exige (`actif_autorise`) ; seule `exclusions` y empêche un envoi.
+  if (mode === "passif") o.push(...OPTIONS_PASSIF_SANS_FORMULAIRE);
   if (debit) {
     o.push("scanner.threadPerHost=1", `scanner.delayInMs=${debit.delai_ms}`, "spider.thread=1", `spider.requestwait=${debit.delai_ms}`);
   }

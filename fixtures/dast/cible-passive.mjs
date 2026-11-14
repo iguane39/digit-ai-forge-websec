@@ -10,9 +10,10 @@
 //   /api/donnees    réponse JSON qui autorise toute origine (Access-Control-Allow-Origin: *)
 //   /api/profil     réponse JSON qui REFLÈTE l'en-tête Origin reçu et autorise les identifiants
 // Le journal (un objet JSON par ligne, ajouté au fichier de `--journal`) note l'heure en ms, la méthode, l'URL
-// et, pour un POST, les 120 premiers caractères du corps. Mesuré le 13/11/2026 : l'araignée du mode passif
-// SOUMET le formulaire de /connexion (un POST, avec des valeurs que ZAP choisit) ; toute requête vers une
-// route inconnue est une sonde.
+// et, pour un POST, les 120 premiers caractères du corps. Mesuré le 13/11/2026, avant TF-2498 : l'araignée du
+// mode passif SOUMETTAIT le formulaire de /connexion (un POST, avec des valeurs que ZAP choisit) ; le mode
+// passif n'en doit plus envoyer aucun, et tout POST au journal est un défaut. Toute requête vers une route
+// inconnue est une sonde.
 //
 // Usage : node cible-passive.mjs --journal <fichier> [--port N] [--hote 127.0.0.1]
 // Première ligne de sortie, une fois à l'écoute : {"port":N}

@@ -218,8 +218,8 @@ par `--seuils <f.json>`.
 
 | Mode | Commande cherchée | Ce qui part vers la cible |
 |---|---|---|
-| `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker épinglée (`zap-baseline.py`) | l'araignée et les règles passives, aucune règle d'attaque ; l'araignée **soumet les formulaires** qu'elle trouve (un POST, constaté le 13/11/2026), seule l'option `exclusions` du mandat l'en empêche |
-| `actif` (`actif_autorise: true`) | `zap-full-scan.py`, `zap.sh` ou `zap.bat`, sinon l'image Docker épinglée (`zap-full-scan.py`) | l'araignée, puis l'attaque active de chaque URL trouvée |
+| `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker épinglée (`zap-baseline.py`) | l'araignée et les règles passives, aucune règle d'attaque, **aucun formulaire soumis** (`spider.processform=false`, `spider.postform=false`, TF-2498 : l'araignée soumettait un POST, constaté le 13/11/2026) ; le formulaire reste lu, il n'est pas envoyé |
+| `actif` (`actif_autorise: true`) | `zap-full-scan.py`, `zap.sh` ou `zap.bat`, sinon l'image Docker épinglée (`zap-full-scan.py`) | l'araignée, puis l'attaque active de chaque URL trouvée ; les formulaires gardent le réglage par défaut de ZAP, seule l'option `exclusions` du mandat empêche l'envoi de l'un d'eux |
 
 Un mode ne se rabat jamais sur l'autre (TF-2444). Un ZAP qui ne sait que `baseline` ne rend pas un
 « actif » : `SKIP` `DAST-ACTIF-IMPOSSIBLE`. Un ZAP qui attaque (`zap-full-scan.py`, ou le balayage
@@ -409,7 +409,8 @@ node scripts/preuve-dast-passif.mjs [--oracle <oracle-dast.mjs>]
 
 Même image épinglée, déjà présente. Il démarre `fixtures/dast/cible-passive.mjs` (cookie sans attribut, en-têtes CORS ouverts,
 formulaire sans jeton) sur `127.0.0.1`, lance la passe passive et rend, cas par cas (SESS-02, CLNT-07, SESS-05), si la règle de
-l'image a été levée : `referentiels/wstg-cas.md` en reprend le résultat dans sa section du mode passif. Compter une minute.
+l'image a été levée, et assertit qu'aucune requête POST n'atteint la cible (TF-2498) : `referentiels/wstg-cas.md` en reprend le
+résultat dans sa section du mode passif. Compter une minute.
 
 ## Limites explicites (ce que la v0 n'est pas)
 

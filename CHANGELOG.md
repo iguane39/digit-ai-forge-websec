@@ -5,6 +5,26 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-14 — `oracle-dast` 0.3.2 : le mode passif ne soumet plus aucun formulaire (TF-2498)
+
+- **Effet** : l'araignée de ZAP, en mode passif, soumettait le formulaire qu'elle trouvait (POST `/connexion`, corps
+  `identifiant=ZAP&secret=ZAP`, mesuré le 13/11/2026 sur la cible de fixture) : un mode qui « n'attaque pas » n'était pas en lecture
+  seule, et seule l'option `exclusions` du mandat l'empêchait. L'oracle passe maintenant `spider.processform=false` et
+  `spider.postform=false` à ZAP en mode passif (dans `-z`, sur la voie Docker comme sur `zap-baseline.py`) ; le formulaire reste lu,
+  il n'est pas envoyé. Le verdict le consigne (`synthese.balayage.formulaires`). Le mode actif n'est pas modifié : aucun de ces
+  réglages n'y est passé, `actif_autorise: true` reste exigé. `wstg-cas.md` passe à 0.2.4 (`oracle_dast: 0.3.2`), le README et
+  `scripts/preuve-dast-passif.mjs` disent et assertent « aucun POST ».
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2498. Un ZAP simulé (`fixtures/dast/zap-simule.mjs`, désormais capable de jouer l'araignée
+  contre une origine locale désignée par `WEBSEC_DAST_SIMULE_ORIGINE`) parcourt la cible de fixture `cible-passive.mjs`, dans un processus
+  à part qui journalise chaque requête : en mode passif, aucun POST (la page du formulaire est lue) ; en mode actif, témoin, le POST part.
+  Mesuré le 14/11/2026, mêmes pages, même ZAP simulé : l'ancien oracle laisse partir 1 POST (`POST /connexion`), le nouveau 0.
+- **Assertion modifiée** : « mode passif → la passe baseline, une fois, sans option » (`!argv.includes("-z")`) devient « avec pour seules
+  options les deux réglages d'araignée » : le mode passif porte désormais un `-z`, par décision. L'assertion est plus stricte (texte
+  exact de `-z`), pas plus souple.
+- **Non prouvé** : que le VRAI ZAP lit ces deux réglages sous ces noms. L'image épinglée n'était pas sur le poste le 14/11/2026 (Docker
+  absent puis démarré, image non tirée : l'oracle ne télécharge jamais). Le banc prouve que l'oracle les passe ; la preuve réelle est
+  `node scripts/preuve-dast-passif.mjs`, à rejouer sur un poste qui porte l'image.
+
 ## 2026-11-14 — `oracle-sca` 0.2.3 : un délai dépassé n'est plus un outil absent, et le délai de la sonde se règle (TF-2413, TF-2417)
 
 - **Effet** : la sonde `<outil> --version` avait 10 s en dur et rendait un simple oui/non : sur un poste chargé, `npm --version` a mis
