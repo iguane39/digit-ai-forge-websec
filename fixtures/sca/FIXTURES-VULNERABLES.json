@@ -1,0 +1,52 @@
+{
+  "declare_le": "2026-11-14",
+  "id": "TF-2539",
+  "objet": "Les manifestes de ce dossier qui portent volontairement une dépendance vulnérable. oracle-sca doit les juger FAIL : ce sont les fixtures du sens rouge, pas des dépendances du dépôt. L'hébergeur les signale à tort comme des dépendances réelles ; cette liste est la déclaration qui les distingue, et le self-test (bloc TF-2539) la tient exacte.",
+  "releve_hebergeur": {
+    "le": "2026-11-14",
+    "commande": "gh api repos/iguane39/digit-ai-forge-websec/dependabot/alerts --paginate",
+    "alertes_ouvertes": 155,
+    "dont_critiques": 18,
+    "hors_fixtures": 0,
+    "note": "Compte rapporté du relevé du 14/11/2026, non rejoué par le self-test (il ne contacte pas l'hébergeur). Chaque alerte est portée par un manifeste ci-dessous ; aucune ne l'est par un manifeste hors fixtures/sca."
+  },
+  "fixtures_vulnerables": [
+    {
+      "manifeste": "fixtures/sca/npm-vulnerable/package-lock.json",
+      "ecosysteme": "npm",
+      "epingle": { "paquet": "lodash", "version": "4.17.15" },
+      "joue_par": "oracle-sca, sens rouge npm (npm audit)",
+      "motif": "Version ancienne de lodash à CVE publiques, choisie pour que le sens rouge de l'oracle SCA npm échoue pour la bonne raison.",
+      "alertes_hebergeur": { "total": 5, "critiques": 0 }
+    },
+    {
+      "manifeste": "fixtures/sca/pip-vulnerable/requirements.txt",
+      "ecosysteme": "pip",
+      "epingle": { "paquet": "django", "version": "1.4" },
+      "joue_par": "oracle-sca, sens rouge pip (pip-audit, direct ou par uvx)",
+      "motif": "Django 1.4, version très ancienne à CVE publiques nombreuses, choisie pour que le sens rouge de l'oracle SCA pip échoue pour la bonne raison.",
+      "alertes_hebergeur": { "total": 50, "critiques": 6 }
+    },
+    {
+      "manifeste": "fixtures/sca/uv-vulnerable/uv.lock",
+      "ecosysteme": "pip",
+      "epingle": { "paquet": "django", "version": "1.4" },
+      "joue_par": "oracle-sca, sens rouge uv.lock (pip-audit, direct ou par uvx)",
+      "motif": "Verrou uv.lock qui épingle Django 1.4 : prouve que l'oracle lit un verrou uv et rend FAIL sur une version à CVE connues.",
+      "alertes_hebergeur": { "total": 50, "critiques": 6 }
+    },
+    {
+      "manifeste": "fixtures/sca/poetry-vulnerable/poetry.lock",
+      "ecosysteme": "pip",
+      "epingle": { "paquet": "django", "version": "1.4" },
+      "joue_par": "oracle-sca, sens rouge poetry.lock (pip-audit, direct ou par uvx)",
+      "motif": "Verrou poetry.lock qui épingle Django 1.4 : prouve que l'oracle lit un verrou poetry et rend FAIL sur une version à CVE connues.",
+      "alertes_hebergeur": { "total": 50, "critiques": 6 }
+    }
+  ],
+  "dependances_reelles": {
+    "manifestes": [],
+    "constat": "Aucune. La forge n'a aucune dépendance propre (CLAUDE.md : zéro dépendance npm propre) : oracle-sca et oracle-dast délèguent à l'outillage du poste. Il n'y a donc aucune mise à jour de dépendance à faire ici. Le jour où un manifeste réel apparaît hors de fixtures/, le self-test (bloc TF-2539) le refuse tant qu'il n'est pas traité."
+  },
+  "regle_pour_une_nouvelle_fixture": "Une fixture dont le nom de dossier finit par -vulnerable s'ajoute à fixtures_vulnerables avec son épingle, son motif et le compte d'alertes de l'hébergeur quand il est connu ; sans cela le self-test la refuse."
+}

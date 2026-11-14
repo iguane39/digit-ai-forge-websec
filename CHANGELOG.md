@@ -5,6 +5,20 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-14 — les alertes de dépendances de l'hébergeur sont toutes des fixtures de l'oracle SCA, déclarées comme telles (TF-2539, part forge-websec)
+
+- **Effet** : l'hébergeur signalait 155 alertes de dépendances ouvertes sur la branche par défaut, dont 18 critiques (relevé en lecture le
+  14/11/2026, `gh api repos/iguane39/digit-ai-forge-websec/dependabot/alerts --paginate`, rapporté, non rejoué par le self-test). Les 155
+  sont portées par quatre manifestes volontairement vulnérables de `fixtures/sca/` (`npm-vulnerable` : 5, `pip-vulnerable`, `uv-vulnerable`
+  et `poetry-vulnerable` : 50 chacun) ; aucune par un manifeste hors de ce dossier. La forge n'a aucune dépendance réelle, donc aucune
+  mise à jour à faire : monter ces versions retirerait le sens rouge d'`oracle-sca`. `fixtures/sca/FIXTURES-VULNERABLES.json` les déclare
+  (date, motif, épingle, compte relevé par manifeste) et dit que les dépendances réelles sont au nombre de zéro. Aucune alerte n'est fermée
+  chez l'hébergeur : c'est une publication, laissée à la session.
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2539, avec un rouge par défaut : manifeste `*-vulnerable` non déclaré, déclaration sans manifeste,
+  épingle changée (`1.4.2` n'est pas `1.4`), motif vide, date invalide, totaux qui ne s'additionnent pas, dépendance réelle apparue hors
+  `fixtures/sca/` non déclarée (puis acceptée une fois déclarée), dépendance réelle déclarée mais absente. Mesuré le 14/11/2026 : le même bloc
+  rejoué contre l'état d'avant (aucune déclaration) refuse les quatre manifestes.
+
 ## 2026-11-14 — `oracle-dast` 0.3.3 : le verdict et le référentiel disent ce que `-silent` retire, les règles bêta de ZAP (TF-2499)
 
 - **Effet** : depuis TF-2477, `-silent` empêche `zap-baseline.py` (`pscanrulesBeta`) et `zap-full-scan.py` (`pscanrulesBeta` et

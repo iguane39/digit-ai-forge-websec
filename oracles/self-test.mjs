@@ -1825,5 +1825,96 @@ console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2498 : le mode passif 
   ok(defautsReadme("gate optionnel consommé par les oracles M-1…M-5 du pilot").some((d) => /M-1…M-5/.test(d)), "TF-2490 · ROUGE — « oracles M-1…M-5 du pilot » est refusé");
 }
 
+// ── TF-2539 · chaque manifeste vulnérable est une fixture déclarée, et le dépôt n'a aucune dépendance réelle non traitée ──────
+// Le 14/11/2026 l'hébergeur signalait 155 alertes de dépendances (dont 18 critiques) sur ce dépôt : toutes portées par les quatre
+// manifestes volontairement vulnérables de fixtures/sca/, aucune par une dépendance réelle. Rien ne le disait. fixtures/sca/FIXTURES-VULNERABLES.json
+// le déclare (date, motif, épingle, compte relevé) ; ce bloc la tient exacte : un manifeste `*-vulnerable` ajouté sans déclaration, une
+// déclaration sans manifeste, une épingle qui a changé, un motif ou une date vides, des comptes qui ne s'additionnent plus, ou un manifeste
+// hors fixtures/sca non déclaré parmi les dépendances réelles sont refusés. Le compte de l'hébergeur est rapporté, non rejoué (le self-test ne le contacte pas).
+{
+  const MANIFESTES_VERROU = new Set(["package-lock.json", "requirements.txt", "uv.lock", "poetry.lock", "yarn.lock", "pnpm-lock.yaml", "Pipfile.lock"]);
+  const estManifeste = (nom) => MANIFESTES_VERROU.has(nom) || nom === "package.json" || nom === "pyproject.toml" || /^requirements.*\.txt$/.test(nom);
+  const racineDepot = path.join(HERE, "..");
+  const versLire = (...p) => p.join("/");
+  // Ce que le disque porte : le texte de chaque manifeste des dossiers `*-vulnerable`, et les manifestes hors fixtures/sca.
+  const lireDisque = (racine) => {
+    const vulnerables = {};
+    const dossierSca = path.join(racine, "fixtures", "sca");
+    for (const d of fs.existsSync(dossierSca) ? fs.readdirSync(dossierSca, { withFileTypes: true }) : []) {
+      if (!d.isDirectory() || !/-vulnerable$/.test(d.name)) continue;
+      for (const f of fs.readdirSync(path.join(dossierSca, d.name))) if (MANIFESTES_VERROU.has(f)) vulnerables[versLire("fixtures", "sca", d.name, f)] = fs.readFileSync(path.join(dossierSca, d.name, f), "utf8");
+    }
+    const horsFixtures = [];
+    const marcher = (dir, rel) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isDirectory()) { if (e.name !== ".git" && e.name !== "node_modules" && r !== "fixtures/sca") marcher(path.join(dir, e.name), r); }
+        else if (estManifeste(e.name)) horsFixtures.push(r);
+      }
+    };
+    marcher(racine, "");
+    return { vulnerables, horsFixtures: horsFixtures.sort() };
+  };
+  const defautsDeclaration = (declaration, disque) => {
+    const d = [];
+    const lignes = declaration?.fixtures_vulnerables;
+    if (!Array.isArray(lignes)) return ["fixtures_vulnerables absent ou illisible"];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(declaration.declare_le || "")) d.push("declare_le n'est pas une date AAAA-MM-JJ");
+    const declares = new Map(lignes.map((l) => [l.manifeste, l]));
+    for (const m of Object.keys(disque.vulnerables)) if (!declares.has(m)) d.push(`${m} est un manifeste vulnérable non déclaré`);
+    for (const [m, l] of declares) {
+      const texte = disque.vulnerables[m];
+      if (texte === undefined) { d.push(`${m} est déclaré mais absent des dossiers *-vulnerable`); continue; }
+      if (!String(l.motif || "").trim()) d.push(`${m} : motif vide`);
+      const { paquet, version } = l.epingle || {};
+      const epingle = paquet && version && new RegExp(`${paquet}[\\s\\S]{0,40}(?<![\\d.])${version.replace(/\./g, "\\.")}(?![\\d.])`, "i");
+      if (!epingle || !epingle.test(texte)) d.push(`${m} : l'épingle déclarée « ${paquet} ${version} » n'y figure plus`);
+    }
+    const rel = declaration.releve_hebergeur || {};
+    const somme = (cle) => lignes.reduce((s, l) => s + (l.alertes_hebergeur?.[cle] ?? 0), 0);
+    if (rel.alertes_ouvertes !== somme("total") + (rel.hors_fixtures ?? 0)) d.push(`alertes : le relevé dit ${rel.alertes_ouvertes}, les fixtures en portent ${somme("total")} et ${rel.hors_fixtures ?? 0} hors fixtures`);
+    if (rel.dont_critiques !== somme("critiques")) d.push(`critiques : le relevé dit ${rel.dont_critiques}, les fixtures en portent ${somme("critiques")}`);
+    const reelles = declaration.dependances_reelles?.manifestes;
+    if (!Array.isArray(reelles)) d.push("dependances_reelles.manifestes absent");
+    else {
+      for (const m of disque.horsFixtures) if (!reelles.includes(m)) d.push(`${m} est un manifeste hors fixtures/sca, non déclaré parmi les dépendances réelles`);
+      for (const m of reelles) if (!disque.horsFixtures.includes(m)) d.push(`${m} est déclaré dépendance réelle mais absent du dépôt`);
+    }
+    return d;
+  };
+  const declaration = JSON.parse(fs.readFileSync(FX("sca", "FIXTURES-VULNERABLES.json"), "utf8"));
+  const disque = lireDisque(racineDepot);
+  const defReel = defautsDeclaration(declaration, disque);
+  ok(defReel.length === 0 && Object.keys(disque.vulnerables).length >= 4,
+    `TF-2539 · VERT — les ${Object.keys(disque.vulnerables).length} manifestes vulnérables de fixtures/sca sont déclarés (date, motif, épingle, compte relevé), et le dépôt ne porte aucune dépendance réelle hors fixtures${defReel.length ? " (défauts : " + defReel.join(" ; ") + ")" : ""}`);
+  const copie = (o) => JSON.parse(JSON.stringify(o));
+  const disqueCopie = () => ({ vulnerables: { ...disque.vulnerables }, horsFixtures: [...disque.horsFixtures] });
+  // ROUGE : un manifeste vulnérable ajouté sans déclaration (l'oubli de demain)
+  const avecNouveau = disqueCopie(); avecNouveau.vulnerables["fixtures/sca/go-vulnerable/requirements.txt"] = "django==1.4\n";
+  ok(defautsDeclaration(declaration, avecNouveau).some((x) => /go-vulnerable\/requirements\.txt est un manifeste vulnérable non déclaré/.test(x)), "TF-2539 · ROUGE — un manifeste *-vulnerable sans déclaration est refusé");
+  // ROUGE : une déclaration sans manifeste
+  const sansManifeste = disqueCopie(); delete sansManifeste.vulnerables["fixtures/sca/uv-vulnerable/uv.lock"];
+  ok(defautsDeclaration(declaration, sansManifeste).some((x) => /uv-vulnerable\/uv\.lock est déclaré mais absent/.test(x)), "TF-2539 · ROUGE — une déclaration dont le manifeste a disparu est refusée");
+  // ROUGE : l'épingle a changé (la fixture n'est plus vulnérable comme déclarée) ; le texte voisin « 1.4.2 » ne vaut pas « 1.4 »
+  const autreVersion = disqueCopie(); autreVersion.vulnerables["fixtures/sca/pip-vulnerable/requirements.txt"] = "django==1.4.2\n";
+  ok(defautsDeclaration(declaration, autreVersion).some((x) => /pip-vulnerable\/requirements\.txt : l'épingle déclarée « django 1\.4 » n'y figure plus/.test(x)), "TF-2539 · ROUGE — une épingle déclarée que le manifeste ne porte plus est refusée (1.4.2 n'est pas 1.4)");
+  // ROUGE : motif vide, date invalide
+  const sansMotif = copie(declaration); sansMotif.fixtures_vulnerables[0].motif = "  ";
+  ok(defautsDeclaration(sansMotif, disque).some((x) => /npm-vulnerable\/package-lock\.json : motif vide/.test(x)), "TF-2539 · ROUGE — une fixture déclarée sans motif est refusée");
+  const sansDate = copie(declaration); sansDate.declare_le = "hier";
+  ok(defautsDeclaration(sansDate, disque).some((x) => /declare_le n'est pas une date/.test(x)), "TF-2539 · ROUGE — une déclaration sans date valide est refusée");
+  // ROUGE : les comptes du relevé ne s'additionnent plus
+  const mauvaisTotal = copie(declaration); mauvaisTotal.releve_hebergeur.alertes_ouvertes = 156;
+  ok(defautsDeclaration(mauvaisTotal, disque).some((x) => /alertes : le relevé dit 156, les fixtures en portent 155/.test(x)), "TF-2539 · ROUGE — un total d'alertes qui n'est pas la somme des fixtures est refusé");
+  const mauvaisCritiques = copie(declaration); mauvaisCritiques.releve_hebergeur.dont_critiques = 17;
+  ok(defautsDeclaration(mauvaisCritiques, disque).some((x) => /critiques : le relevé dit 17, les fixtures en portent 18/.test(x)), "TF-2539 · ROUGE — un compte de critiques qui n'est pas la somme des fixtures est refusé");
+  // ROUGE : une dépendance réelle apparue hors fixtures, non déclarée ; puis VERT une fois déclarée (le remède joué)
+  const avecReelle = disqueCopie(); avecReelle.horsFixtures.push("package.json");
+  ok(defautsDeclaration(declaration, avecReelle).some((x) => /package\.json est un manifeste hors fixtures\/sca, non déclaré/.test(x)), "TF-2539 · ROUGE — un manifeste réel apparu hors fixtures/sca et non déclaré est refusé");
+  const reelleDeclaree = copie(declaration); reelleDeclaree.dependances_reelles.manifestes = ["package.json"];
+  ok(defautsDeclaration(reelleDeclaree, avecReelle).length === 0, "TF-2539 · VERT — le même manifeste réel, une fois déclaré parmi les dépendances réelles, est accepté (le remède que le message propose passe)");
+  ok(defautsDeclaration(reelleDeclaree, disque).some((x) => /package\.json est déclaré dépendance réelle mais absent du dépôt/.test(x)), "TF-2539 · ROUGE — une dépendance réelle déclarée mais absente du dépôt est refusée");
+}
+
 console.log(`\nSelf-test forge-websec : ${pass} PASS, ${echec} FAIL, ${note} SKIP motivé (outillage/réseau du poste, non comptés)`);
 process.exit(echec ? 1 : 0);
