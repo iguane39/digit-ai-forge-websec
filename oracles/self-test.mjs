@@ -1555,6 +1555,15 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2518 : le fichier se 
         "TF-2477 · VERT — `-silent` est passé à ZAP (mise à jour des modules coupée) et le verdict le consigne, image épinglée = oui");
       ok(/^-silent -config 'spider\.processform=false' -config 'spider\.postform=false'$/.test(optionsZ(run)),
         `TF-2498 · VERT — voie Docker en mode passif : -silent puis les deux réglages qui coupent les formulaires, rien d'autre (obtenu « ${optionsZ(run)} »)`);
+      // TF-2499 : aucune règle bêta n'est réactivée par le réseau, et le verdict dit ce que -silent retire
+      ok(!/addon(update|install)/i.test(a.join(" ")),
+        `TF-2499 · VERT — aucune règle n'est réactivée par le réseau : ni -addonupdate ni -addoninstall dans la ligne de commande de l'image (obtenu « ${a.join(" ").slice(0, 200)} »)`);
+      const beta = r.synthese?.balayage?.regles_beta;
+      ok(beta && beta.jouees === false && JSON.stringify(beta.modules) === JSON.stringify(["pscanrulesBeta"]) && beta.liste_lue === false && beta.reactivees_par_le_reseau === false,
+        `TF-2499 · VERT — le verdict du mode passif consigne que pscanrulesBeta n'est pas joué, que sa liste n'a pas été lue et qu'aucune règle n'est réactivée (obtenu ${JSON.stringify(beta)})`);
+      const titreRenvoye = (/section « ([^»]+) »/.exec((beta && beta.cas_par_cas) || "") || [])[1];
+      ok(Boolean(titreRenvoye) && new RegExp(`^## ${titreRenvoye.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\r?$`, "m").test(fs.readFileSync(path.join(HERE, "..", "referentiels", "wstg-cas.md"), "utf8")),
+        `TF-2499 · VERT — la section que le verdict nomme existe dans referentiels/wstg-cas.md (obtenu « ${titreRenvoye} »)`);
       ok(!aRegle(r, "DAST-IMAGE-MOBILE") && !aRegle(r, "DAST-REGLE-HORS-IMAGE") && r.synthese?.zap?.regles_image?.comparees === true,
         "TF-2477 · VERT — image épinglée et alertes toutes listées : ni DAST-IMAGE-MOBILE ni DAST-REGLE-HORS-IMAGE");
     }
@@ -1562,6 +1571,8 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2518 : le fichier se 
       const { r, run } = lancerDocker([imageEpinglee], { WEBSEC_DAST_TEST_ACCES: "Bearer fixture-image" }, "actif", "autorisation-actif-options.json");
       ok(r.verdict === "PASS" && run.length === 1 && run[0].argv.includes("zap-full-scan.py") && /^-silent -config /.test(optionsZ(run)) && optionsZ(run).includes("scanner.delayInMs=200"),
         `TF-2477 · VERT — en mode actif, -silent précède les options du mandat dans -z, qui les porte toujours (obtenu ${r.verdict})`);
+      ok(JSON.stringify(r.synthese?.balayage?.regles_beta?.modules) === JSON.stringify(["pscanrulesBeta", "ascanrulesBeta"]) && r.synthese.balayage.regles_beta.jouees === false,
+        `TF-2499 · VERT — le verdict du mode actif nomme les deux modules bêta non joués, pscanrulesBeta et ascanrulesBeta (obtenu ${JSON.stringify(r.synthese?.balayage?.regles_beta?.modules)})`);
       ok(!/spider\.(processform|postform)/.test(optionsZ(run)),
         `TF-2498 · le mode actif garde le comportement de ZAP : aucun réglage de formulaire dans -z (obtenu « ${optionsZ(run)} »)`);
     }
@@ -1601,6 +1612,8 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2518 : le fichier se 
       });
       ok(r.verdict === "PASS" && /^non maîtrisée/.test(r.synthese?.balayage?.maj_modules) && r.synthese?.balayage?.image === undefined,
         `TF-2477 · ZAP natif simulé : la mise à jour des modules est dite non maîtrisée, aucune image n'est annoncée (obtenu ${r.verdict})`);
+      ok(r.synthese?.balayage?.regles_beta?.jouees === "indéterminé" && r.synthese.balayage.regles_beta.liste_lue === false && r.synthese.balayage.regles_beta.modules === undefined,
+        `TF-2499 · ZAP natif simulé : le verdict ne prétend pas savoir si des règles bêta ont tourné (« indéterminé »), sans nommer de module (obtenu ${JSON.stringify(r.synthese?.balayage?.regles_beta)})`);
     }
   }
   // rapport fourni : la comparaison a lieu aussi, avec une cause qui ne prétend pas connaître l'image
@@ -1736,6 +1749,61 @@ console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2498 : le mode passif 
   // ROUGE : une règle citée dans la section du mode passif qui n'est d'aucun add-on listé
   const sectionFausse = reel.replace(/(## Ce que le mode passif d'oracle-dast couvre\r?\n)/, "$1\nLa règle « Règle Inventée » ne figure dans aucun add-on.\n");
   ok(sectionFausse !== reel && defautsReglesDast(sectionFausse, regles).some((d) => /section du mode passif cite « Règle Inventée »/.test(d)), "TF-2476 · ROUGE — la section du mode passif qui cite une règle inventée est refusée");
+}
+
+// ── TF-2499 · le référentiel dit, cas par cas, ce que la voie Docker ne joue plus depuis -silent ──────────────
+// Classe oracle-perimetre-de-non-mesure-non-publie : depuis TF-2477, `-silent` empêche zap-baseline.py et zap-full-scan.py d'installer
+// pscanrulesBeta et ascanrulesBeta depuis le réseau ; la couverture que cela retire n'était dite ni cas par cas ni au verdict. La section
+// « Ce que la voie Docker ne joue plus depuis -silent » de wstg-cas.md doit nommer CHAQUE cas confié à oracle-dast (l'oubli ne se tait pas),
+// avec son mode, le module bêta non joué et la règle retirée constatée ; le verdict, lui, est jugé dans le volet TF-2477 (voie Docker simulée).
+{
+  const TITRE = "Ce que la voie Docker ne joue plus depuis -silent";
+  const cellules = (l) => l.split("|").map((c) => c.trim());
+  const modesDe = (texte) => [/\bpassif\b/.test(texte) ? "passif" : null, /\bactif\b/.test(texte) ? "actif" : null].filter(Boolean).join("+");
+  const casConfies = (texte) => {
+    const m = new Map();
+    for (const l of texte.split("\n")) {
+      if (!/^\|\s*\**WSTG-/.test(l)) continue;
+      const c = cellules(l);
+      const outillage = c[c.length - 2] || "";
+      if (/oracle-dast/.test(outillage)) m.set(c[1].replace(/\*/g, ""), modesDe(outillage.slice(outillage.indexOf("oracle-dast"))));
+    }
+    return m;
+  };
+  const defautsBeta = (texte) => {
+    const section = (texte.match(new RegExp(`## ${TITRE}\\r?\\n([\\s\\S]*?)(?=\\r?\\n## |$)`)) || [])[1];
+    if (section === undefined) return [`section « ${TITRE} » absente`];
+    const d = [];
+    const confies = casConfies(texte);
+    const dites = new Map(section.split("\n").filter((l) => /^\|\s*WSTG-/.test(l)).map(cellules).map((c) => [c[1], c]));
+    for (const [id, modes] of confies) {
+      const c = dites.get(id);
+      if (!c) { d.push(`${id} est confié à oracle-dast mais la section ne le dit pas`); continue; }
+      if (modesDe(c[2]) !== modes) d.push(`${id} : la section dit « ${c[2]} », la colonne Outillage dit « ${modes} »`);
+      if (!/pscanrulesBeta|ascanrulesBeta/.test(c[3])) d.push(`${id} : aucun module bêta nommé`);
+      if (!c[4]) d.push(`${id} : la règle retirée constatée n'est pas dite`);
+    }
+    for (const id of dites.keys()) if (!confies.has(id)) d.push(`${id} figure dans la section sans être confié à oracle-dast`);
+    if (!/n'a jamais été lue/.test(section)) d.push("la section ne dit pas que la liste des règles bêta n'a jamais été lue");
+    return d;
+  };
+  const reel = fs.readFileSync(path.join(HERE, "..", "referentiels", "wstg-cas.md"), "utf8");
+  const defReel = defautsBeta(reel);
+  ok(defReel.length === 0 && casConfies(reel).size >= 14,
+    `TF-2499 · VERT — la section nomme chacun des ${casConfies(reel).size} cas confiés à oracle-dast, avec son mode, son module bêta et sa règle retirée constatée${defReel.length ? " (défauts : " + defReel.join(" ; ") + ")" : ""}`);
+  // ROUGE : un cas confié à oracle-dast omis de la section
+  const sansCas = reel.replace(/^\| WSTG-INPV-12 \| actif \|.*\r?\n/m, "");
+  ok(sansCas !== reel && defautsBeta(sansCas).some((x) => /WSTG-INPV-12 est confié à oracle-dast mais la section ne le dit pas/.test(x)), "TF-2499 · ROUGE — un cas confié à oracle-dast omis de la section est refusé");
+  // ROUGE : un cas confié à oracle-dast après coup, que la section n'a jamais vu (l'oubli de demain)
+  const nouveauCas = reel.replace(/^(\| WSTG-CRYP-03 \|.*\| )[^|]*\|\s*$/m, "$1oracle-dast (passif : règle fictive) |");
+  ok(nouveauCas !== reel && defautsBeta(nouveauCas).some((x) => /WSTG-CRYP-03 est confié à oracle-dast mais la section ne le dit pas/.test(x)), "TF-2499 · ROUGE — un cas nouvellement confié à oracle-dast sans ligne dans la section est refusé");
+  // ROUGE : un module bêta non nommé, une section absente, un mode qui diverge
+  const sansModule = reel.replace(/^(\| WSTG-SESS-05 \| passif \| )`pscanrulesBeta`/m, "$1aucun");
+  ok(sansModule !== reel && defautsBeta(sansModule).some((x) => /WSTG-SESS-05 : aucun module bêta nommé/.test(x)), "TF-2499 · ROUGE — une ligne sans module bêta nommé est refusée");
+  const sansSection = reel.replace(`## ${TITRE}`, "## Autre titre");
+  ok(sansSection !== reel && defautsBeta(sansSection).some((x) => /section « .* » absente/.test(x)), "TF-2499 · ROUGE — l'absence de la section est refusée");
+  const mauvaisMode = reel.replace(/^(\| WSTG-CLNT-07 \| )passif( \|)/m, "$1actif$2");
+  ok(mauvaisMode !== reel && defautsBeta(mauvaisMode).some((x) => /WSTG-CLNT-07 : la section dit « actif »/.test(x)), "TF-2499 · ROUGE — un mode de la section qui diverge de la colonne Outillage est refusé");
 }
 
 // ── TF-2490 · le README ne porte aucun compte de recette en dur, et ne dit pas « oracles M-1…M-5 » ───────────

@@ -56,7 +56,9 @@
 // l'image, listées dans referentiels/zap-regles.json ; une alerte dont le nom n'y figure pas est signalée
 // (DAST-REGLE-HORS-IMAGE, info). Une image désignée par WEBSEC_DAST_IMAGE sans empreinte ni version est dite
 // mobile au verdict (DAST-IMAGE-MOBILE) ; la mise à jour des modules d'un ZAP natif n'est pas maîtrisée, et
-// le verdict le consigne (synthese.balayage.maj_modules).
+// le verdict le consigne (synthese.balayage.maj_modules). Les règles bêta que `-silent` ne laisse plus
+// s'installer sont nommées au verdict (synthese.balayage.regles_beta, TF-2499) et cas par cas dans
+// referentiels/wstg-cas.md ; aucune n'est réactivée par le réseau.
 // Délai de ZAP (TF-2486) : `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, le temps de
 // `plafond_requetes` requêtes au délai imposé plus 5 min de démarrage, jamais moins de 30 min ; sinon
 // 30 min. Il est toujours borné par la fin de la fenêtre d'autorisation. Quand il coupe ZAP, l'arbre
@@ -80,7 +82,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.3.2";
+const VERSION = "0.3.3";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -414,6 +416,9 @@ const arrondi = (m) => Math.round(m * 100) / 100;
 // l'araignée, `spider.postform` l'envoi de ceux qui sont en POST. Les deux, pour que l'intention ne dépende pas de la valeur
 // par défaut de l'une.
 const OPTIONS_PASSIF_SANS_FORMULAIRE = ["spider.processform=false", "spider.postform=false"];
+// Titre de la section de referentiels/wstg-cas.md qui dit, cas par cas, ce que la voie Docker ne joue plus depuis `-silent` (TF-2499) ;
+// le verdict la nomme, et le self-test refuse un verdict qui renvoie à une section absente.
+const SECTION_REGLES_BETA = "Ce que la voie Docker ne joue plus depuis -silent";
 
 synthese.balayage = {
   scan: mode,
@@ -628,11 +633,28 @@ if (zap.mode === "docker") {
   const epinglee = imageEpinglee(zap.image);
   synthese.balayage.image = { reference: zap.image, epinglee, id_local: zap.idLocal };
   synthese.balayage.maj_modules = "coupée : -silent passé à ZAP, les règles sont celles de l'image";
+  // TF-2499 : ce que `-silent` retire est dit au verdict, pas seulement au référentiel. zap-baseline.py installait pscanrulesBeta depuis le
+  // réseau, zap-full-scan.py y ajoutait ascanrulesBeta ; aucun des deux n'est dans l'image, et leurs règles n'ont jamais été lues. Aucune
+  // n'est réactivée par le réseau : ni -addonupdate ni -addoninstall ne sont passés.
+  synthese.balayage.regles_beta = {
+    jouees: false,
+    modules: mode === "actif" ? ["pscanrulesBeta", "ascanrulesBeta"] : ["pscanrulesBeta"],
+    cause: "-silent coupe la mise à jour des modules au lancement : les add-ons bêta que zap-baseline.py et zap-full-scan.py installaient depuis le réseau ne sont plus installés",
+    liste_lue: false,
+    reactivees_par_le_reseau: false,
+    cas_par_cas: `referentiels/wstg-cas.md, section « ${SECTION_REGLES_BETA} »`,
+  };
   if (!epinglee) {
     add("info", "DAST-IMAGE-MOBILE", `image ZAP « ${zap.image} » désignée par une étiquette mobile (WEBSEC_DAST_IMAGE) : ses règles peuvent changer sans que referentiels/zap-regles.json le sache. Identifiant local de l'image qui a tourné : ${zap.idLocal}. Épingler par empreinte (@sha256:…) ou par version complète (:2.17.0).`, origineCible);
   }
 } else {
   synthese.balayage.maj_modules = "non maîtrisée : ZAP natif du poste, dont l'oracle ne coupe pas la mise à jour des modules au lancement";
+  synthese.balayage.regles_beta = {
+    jouees: "indéterminé",
+    cause: "ZAP natif : la mise à jour des modules n'est pas coupée, des add-ons bêta peuvent être installés depuis le réseau au lancement ; l'oracle ne lit ni ce qui l'a été ni leurs règles",
+    liste_lue: false,
+    cas_par_cas: `referentiels/wstg-cas.md, section « ${SECTION_REGLES_BETA} » (dit ce que la voie Docker ne joue plus)`,
+  };
 }
 if (cwd) synthese.balayage.dossier_courant = cwd;
 

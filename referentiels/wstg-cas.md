@@ -1,7 +1,7 @@
 ---
-version: 0.2.4
+version: 0.2.5
 challenge_date: 2026-08-14
-oracle_dast: 0.3.2
+oracle_dast: 0.3.3
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
@@ -60,6 +60,10 @@ signalée au verdict (`DAST-REGLE-HORS-IMAGE`). `oracle_dast` du frontmatter sui
 Même jour (TF-2476) : la section « Ce que le mode passif d'oracle-dast couvre » dit, cas par cas, ce que relève le mode passif
 (cookies, CORS, jeton CSRF pour SESS-02, CLNT-07 et SESS-05, plus INPV-01), comme TF-2460 l'a fait pour le mode actif ; le
 self-test compare chaque règle citée à la liste des règles de l'image.
+
+**Ajout du 14/11/2026 (0.2.4 et 0.2.5, TF-2498 et TF-2499).** Le mode passif ne soumet plus aucun formulaire (`oracle-dast` 0.3.2) : la
+section de ce mode le dit. Une section dit maintenant, cas par cas, ce que la voie Docker ne joue plus depuis `-silent`, les règles
+bêta de ZAP (`oracle-dast` 0.3.3, qui les consigne au verdict) ; `oracle_dast` du frontmatter suit la version 0.3.3.
 
 **Colonne « Outillage »** : `oracle-exposition` | `oracle-sca` | `oracle-dast` | `manuel` —
 jamais inventée. Un cas confié à `oracle-dast` nomme toujours le mode qui le lève, `passif` ou `actif` :
@@ -245,6 +249,48 @@ Set » (CONF-07) et « Server Leaks Version Information via "Server" HTTP Respon
 été levées sur la cible de fixture passive ; les deux autres ne l'ont pas été. Les noms de règles de ce tableau et de ce texte
 sont ceux de `referentiels/zap-regles.json` : le self-test refuse un nom qui n'y figure pas, et un cas confié au mode passif
 sans règle nommée. La preuve est `scripts/preuve-dast-passif.mjs` (vrai ZAP, image épinglée, cible `fixtures/dast/cible-passive.mjs`).
+
+## Ce que la voie Docker ne joue plus depuis -silent
+
+Cette section dit, cas par cas, ce que la voie Docker d'`oracle-dast` ne joue plus depuis qu'elle passe `-silent` à ZAP (0.2.1,
+TF-2477), et ce qu'on n'en sait pas (TF-2499, 14/11/2026).
+
+Avant `-silent`, `zap-baseline.py` lançait `-addonupdate` puis installait `pscanrulesBeta` depuis le réseau, et `zap-full-scan.py`
+y ajoutait `ascanrulesBeta` (lu dans les scripts de l'image par le lot de TF-2477 ; repris ici, non relu). Ni l'un ni l'autre n'est
+dans l'image épinglée : depuis `-silent`, leurs règles ne tournent plus sur la voie Docker. Un ZAP natif n'est pas coupé de sa mise à
+jour : son verdict dit `indéterminé`. **Aucune règle n'est réactivée par le réseau** : l'oracle ne passe ni `-addonupdate` ni
+`-addoninstall`, et le self-test refuse l'un et l'autre dans la ligne de commande de l'image. Le verdict le consigne :
+`synthese.balayage.regles_beta` donne les modules non joués, `liste_lue: false` et renvoie à cette section.
+
+**Ce qui n'est pas établi.** La liste des règles de `pscanrulesBeta` et d'`ascanrulesBeta` n'a jamais été lue : ces modules ne sont
+pas dans l'image et n'ont pas été téléchargés. Pour presque tous les cas, la table ne peut donc dire que le module concerné, pas la
+règle perdue, et « aucune connue » ne veut pas dire « aucune ». Une seule règle est constatée retirée : l'alerte « Source Code
+Disclosure - File Inclusion », levée en `high` par le balayage actif du 12/11/2026 sur la cible de fixture, plus levée au même
+balayage le 13/11/2026 avec `-silent` (mesures du `CHANGELOG.md`, TF-2477, rapportées, non rejouées ici) ; elle n'est pas dans l'image,
+et son module d'origine n'est pas vérifié. Relier une alerte à un cas est un geste du lecteur : elle est rangée sous ATHZ-01 par son
+nom (inclusion de fichier), sans que rien l'établisse.
+
+| Cas | Mode confié à `oracle-dast` | Module bêta non joué | Règle bêta retirée constatée |
+|---|---|---|---|
+| WSTG-ATHZ-01 | actif | `ascanrulesBeta` (et `pscanrulesBeta`, la passe passive de l'araignée) | « Source Code Disclosure - File Inclusion », par son nom seulement |
+| WSTG-CLNT-01 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-CLNT-04 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-CLNT-07 | passif | `pscanrulesBeta` | aucune connue |
+| WSTG-CONF-04 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-INPV-01 | passif et actif | `pscanrulesBeta` en passif ; `ascanrulesBeta` et `pscanrulesBeta` en actif | aucune connue |
+| WSTG-INPV-02 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-INPV-05 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-INPV-07 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-INPV-11 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-INPV-12 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-INPV-19 | actif | `ascanrulesBeta` (et `pscanrulesBeta`) | aucune connue |
+| WSTG-SESS-02 | passif | `pscanrulesBeta` | aucune connue |
+| WSTG-SESS-05 | passif | `pscanrulesBeta` | aucune connue |
+
+Les règles que chaque cas cite dans sa ligne du tableau d'origine sont toutes des règles de l'image, que le self-test vérifie
+(TF-2476) : l'image les charge. Ce que le tableau
+ci-dessus ne dit pas, c'est ce qu'un module bêta ajoutait en plus pour ce cas. Le self-test refuse cette section si elle omet un cas
+confié à `oracle-dast`, ou si le verdict renvoie à une section qui n'existe pas.
 
 ## Chapitres et cas NON curés
 

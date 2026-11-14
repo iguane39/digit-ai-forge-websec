@@ -5,6 +5,23 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-14 — `oracle-dast` 0.3.3 : le verdict et le référentiel disent ce que `-silent` retire, les règles bêta de ZAP (TF-2499)
+
+- **Effet** : depuis TF-2477, `-silent` empêche `zap-baseline.py` (`pscanrulesBeta`) et `zap-full-scan.py` (`pscanrulesBeta` et
+  `ascanrulesBeta`) d'installer leurs add-ons bêta depuis le réseau ; la couverture retirée n'était dite ni cas par cas ni au verdict.
+  `wstg-cas.md` (0.2.5, `oracle_dast: 0.3.3`) a une section « Ce que la voie Docker ne joue plus depuis -silent » : une ligne pour chacun
+  des 14 cas confiés à `oracle-dast`, avec son mode, le module bêta non joué et la règle retirée constatée. Une seule règle est constatée
+  retirée, « Source Code Disclosure - File Inclusion » (mesures de TF-2477 du 12 et 13/11/2026, rapportées, non rejouées), rangée sous
+  ATHZ-01 par son nom seulement. Le reste est dit non établi : la liste des règles de `pscanrulesBeta` et d'`ascanrulesBeta` n'a jamais été
+  lue (modules hors de l'image, non téléchargés), et « aucune connue » n'est pas « aucune ». Le verdict consigne
+  `synthese.balayage.regles_beta` (modules non joués selon le mode, `liste_lue: false`, `reactivees_par_le_reseau: false`, renvoi à la
+  section ; `jouees: "indéterminé"` pour un ZAP natif, dont la mise à jour n'est pas coupée). Aucune règle n'est réactivée par le réseau :
+  `-silent` est conservé, et le self-test refuse `-addonupdate` et `-addoninstall` dans la ligne de commande de l'image.
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2499 (la section nomme chaque cas confié à `oracle-dast`, avec un rouge par défaut : cas omis, cas
+  confié après coup, module non nommé, section absente, mode divergent) et cas du volet Docker simulé (verdict des deux modes, ZAP natif, renvoi à
+  une section qui existe, aucun ajout de module). Mesuré le 14/11/2026 sur la voie Docker simulée : l'ancien oracle rend `regles_beta` indéfini, le
+  nouveau le consigne.
+
 ## 2026-11-14 — `oracle-dast` 0.3.2 : le mode passif ne soumet plus aucun formulaire (TF-2498)
 
 - **Effet** : l'araignée de ZAP, en mode passif, soumettait le formulaire qu'elle trouvait (POST `/connexion`, corps

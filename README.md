@@ -236,7 +236,10 @@ règles que celles de l'image, et ce démarrage coûtait plusieurs minutes. Les 
 `referentiels/zap-regles.json` (lues sans réseau par `node scripts/lire-regles-zap.mjs --image <référence> --ecrire`, qui compare
 ses lectures aux add-ons que ZAP dit charger) ; une alerte dont le nom n'y figure pas est signalée (`DAST-REGLE-HORS-IMAGE`, info,
 jamais un changement de verdict). Un ZAP natif du poste n'est ni épinglé ni coupé de sa mise à jour : `synthese.balayage.maj_modules`
-le dit. Changer d'image se décide : relire ses règles, puis changer la constante `IMAGE_DEFAUT` et la liste dans le même commit — le
+le dit. Les règles bêta que `-silent` ne laisse plus s'installer (`pscanrulesBeta`, et `ascanrulesBeta` en mode actif) ne tournent
+plus sur la voie Docker, et aucune n'est réactivée par le réseau : `synthese.balayage.regles_beta` le consigne au verdict (modules non
+joués, `liste_lue: false` puisque ces modules ne sont pas dans l'image, `indéterminé` pour un ZAP natif), et `referentiels/wstg-cas.md`
+le dit cas par cas (TF-2499). Changer d'image se décide : relire ses règles, puis changer la constante `IMAGE_DEFAUT` et la liste dans le même commit — le
 self-test refuse l'écart.
 
 Le fichier d'autorisation porte aussi les limites du balayage, les mêmes dans les deux modes :
