@@ -5,6 +5,18 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-14 — `capturer.mjs` lit le fichier de capture en second argument, comme la table d'usage du README le prescrit (TF-2518)
+
+- **Effet** : la table d'usage prescrivait `node scripts\capturer.mjs <url> <capture.json>`, forme que le script ne lisait pas : le second
+  argument était ignoré, la capture partait sur la sortie standard, le fichier n'existait pas et `oracle-exposition` rendait SKIP
+  « capture introuvable » (un aller-retour chez un produit, le 30/10/2026). Le script lit désormais `<url> [<fichier.json> | --sortie <fichier.json>]` :
+  la forme prescrite écrit le fichier, la forme `--sortie` garde son comportement, sans fichier la capture part sur la sortie standard. Un fichier
+  nommé deux fois avec deux noms, ou un argument en trop, est refusé (code 2, rien d'écrit) au lieu d'être ignoré. L'URL se lit aussi derrière
+  `--timeout-ms <n>`, ce que `args.find` ne faisait pas.
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2518, rejoue la forme prescrite contre une origine locale : ROUGE sur l'ancien script (fichier absent,
+  287 octets sur la sortie standard, mesurés le 14/11/2026), VERT sur le nouveau, puis `oracle-exposition` lit le fichier produit ; deux refus
+  propres (deux noms, argument en trop).
+
 ## 2026-11-13 — README : plus de compte de recette en dur, et le verdict du gate n'est plus dit consommé par des « oracles M-1…M-5 » (TF-2490)
 
 - **Effet** : le README annonçait 229 PASS pour la recette ; mesurée le 13/11/2026 sur `main` (`ce9c4df`), elle en rend 277 (0 FAIL,

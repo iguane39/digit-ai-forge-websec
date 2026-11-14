@@ -10,23 +10,34 @@
 // TF-2133 : Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate et les URL imbriquées/encodées aussi.
 // TF-2306 : toute URL portée par un en-tête (Location, Report-To, Link, CSP…) perd la valeur de chacun de ses paramètres, par position.
 // TF-2390 : l'adresse capturée (champ url) et l'adresse du message d'échec suivent la même règle de position.
-// Usage : node capturer.mjs <url> [--sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]
+// TF-2518 : le fichier se nomme aussi en second argument positionnel (`capturer.mjs <url> <capture.json>`, la forme de la
+// table d'usage du README et du catalogue du pilot) ; sans fichier, la capture part sur la sortie standard.
+// Usage : node capturer.mjs <url> [<fichier.json> | --sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]
 import fs from "node:fs";
 import { caviarderSetCookie } from "./caviarder-cookies.mjs";
 import { caviarderEnTetes, caviarderUrlEnTete, caviarderUrlsDeValeur } from "./caviarder-jetons.mjs";
 
+const USAGE = "Usage : node capturer.mjs <url> [<fichier.json> | --sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]";
 const args = process.argv.slice(2);
-const url = args.find((a) => !a.startsWith("--"));
+// Les arguments positionnels : ni une option, ni la valeur d'une option (`--sortie f`, `--timeout-ms n`).
+const positionnels = args.filter((a, i) => !a.startsWith("--") && !["--sortie", "--timeout-ms"].includes(args[i - 1]));
+const url = positionnels[0];
 const iSortie = args.indexOf("--sortie");
-const sortie = iSortie >= 0 ? args[iSortie + 1] : null;
+const sortieOption = iSortie >= 0 ? args[iSortie + 1] : null;
 const suivreRedirections = args.includes("--suivre-redirections");
 const iTimeout = args.indexOf("--timeout-ms");
 const timeoutMs = iTimeout >= 0 ? Number(args[iTimeout + 1]) : 15000;
 
 if (!url) {
-  console.error("Usage : node capturer.mjs <url> [--sortie <fichier.json>] [--suivre-redirections] [--timeout-ms <n>]");
+  console.error(USAGE);
   process.exit(2);
 }
+// Un fichier nommé deux fois, ou un argument en trop, n'est jamais ignoré en silence : la capture n'irait pas où l'on croit.
+if (positionnels.length > 2 || (positionnels[1] && sortieOption && positionnels[1] !== sortieOption)) {
+  console.error(`Arguments en trop ou fichier nommé deux fois (${positionnels.slice(1).join(" ")}${sortieOption ? ` / --sortie ${sortieOption}` : ""}).\n${USAGE}`);
+  process.exit(2);
+}
+const sortie = sortieOption ?? positionnels[1] ?? null;
 if (!/^https?:\/\//i.test(url)) {
   console.error(`URL invalide (http:// ou https:// attendu) : ${url}`);
   process.exit(2);

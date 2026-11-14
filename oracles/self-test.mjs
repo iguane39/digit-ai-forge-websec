@@ -1319,6 +1319,48 @@ console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2394 : en-têtes à n
   }
 }
 
+// TF-2518 · la forme que la table d'usage du README prescrit (`capturer.mjs <url> <capture.json>`) écrit le fichier.
+// Avant, le second argument était ignoré : la capture partait sur la sortie standard, le fichier n'existait pas et
+// oracle-exposition rendait SKIP « capture introuvable ». ROUGE sur l'ancien code, VERT sur le nouveau ; deux refus propres.
+console.log("\nSELF-TEST forge-websec — capturer.mjs (TF-2518 : le fichier se nomme en second argument, comme la table d'usage le prescrit)\n");
+{
+  const CAPTURER = path.join(HERE, "..", "scripts", "capturer.mjs");
+  const origine = http.createServer((req, res) => { res.setHeader("X-Content-Type-Options", "nosniff"); res.end("ok"); });
+  await new Promise((r) => origine.listen(0, "127.0.0.1", r));
+  const urlOrigine = `http://127.0.0.1:${origine.address().port}/`;
+  const tmpCap = fs.mkdtempSync(path.join(os.tmpdir(), "forge-websec-positionnel-"));
+  const lancer = (args) => new Promise((resolve) => execFile(process.execPath, [CAPTURER, ...args], { encoding: "utf8", timeout: 30000 },
+    (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr })));
+  try {
+    const fichier = path.join(tmpCap, "capture.json");
+    const prescrit = await lancer([urlOrigine, fichier]);
+    ok(prescrit.code === 0 && fs.existsSync(fichier) && prescrit.stdout === "",
+      `ROUGE · la forme prescrite <url> <capture.json> écrit le fichier et ne met rien sur la sortie standard (code ${prescrit.code}, fichier ${fs.existsSync(fichier) ? "présent" : "absent"}, ${prescrit.stdout.length} octet(s) sur la sortie)`);
+    let cap = null;
+    try { cap = JSON.parse(fs.readFileSync(fichier, "utf8")); } catch { /* le contrôle suivant le dit */ }
+    ok(cap?.status === 200 && cap?.headers?.["x-content-type-options"] === "nosniff",
+      `VERT · la capture écrite par la forme prescrite est celle de l'origine locale (status ${cap?.status})`);
+    const jug = runJson(ORACLE_EXPOSITION, [fichier]);
+    ok(jug.verdict !== "SKIP" && jug.verdict !== "ILLISIBLE", `VERT · oracle-exposition lit ce fichier, la suite de la table d'usage tient (verdict ${jug.verdict})`);
+    const viaOption = path.join(tmpCap, "option.json");
+    const option = await lancer([urlOrigine, "--sortie", viaOption]);
+    ok(option.code === 0 && fs.existsSync(viaOption), `VERT · la forme --sortie garde son comportement (code ${option.code})`);
+    const memeNom = path.join(tmpCap, "meme.json");
+    const identique = await lancer([urlOrigine, memeNom, "--sortie", memeNom]);
+    ok(identique.code === 0 && fs.existsSync(memeNom), `VERT · le même fichier nommé deux fois, par position et par --sortie, est accepté (code ${identique.code})`);
+    const deux = await lancer([urlOrigine, path.join(tmpCap, "a.json"), "--sortie", path.join(tmpCap, "b.json")]);
+    ok(deux.code === 2 && !fs.existsSync(path.join(tmpCap, "a.json")) && !fs.existsSync(path.join(tmpCap, "b.json")),
+      `ROUGE · deux fichiers différents (position et --sortie) sont refusés, code 2, aucun fichier écrit (code ${deux.code})`);
+    const entrop = await lancer([urlOrigine, path.join(tmpCap, "c.json"), "en-trop"]);
+    ok(entrop.code === 2 && !fs.existsSync(path.join(tmpCap, "c.json")), `ROUGE · un troisième argument positionnel est refusé, code 2, aucun fichier écrit (code ${entrop.code})`);
+    const delai = await lancer(["--timeout-ms", "20000", urlOrigine]);
+    ok(delai.code === 0 && delai.stdout.includes('"status": 200'), `VERT · l'URL se lit même derrière --timeout-ms <n> (code ${delai.code})`);
+  } finally {
+    origine.close();
+    fs.rmSync(tmpCap, { recursive: true, force: true });
+  }
+}
+
 // ── TF-1319 · la découverte des oracles LIT LE DISQUE, dans les deux sens ─────────────────────
 // Le juge du pilot (méta-oracle d'enclenchement) confronte ce que cette forge DÉCOUVRE aux
 // verdicts consignés au ledger d'un run. Une découverte qui raterait un oracle le rendrait
