@@ -505,7 +505,9 @@ fixtures/
   exposition-statique/    8 fichiers _headers synthétiques : 1 vert, 7 rouges (EX par sonde, HD-1, HD-2)
   sca/                    manifestes npm/pip/uv/poetry synthétiques (vulnérables + propres) + cas SKIP, et outils/outil-simule.mjs (pip-audit et uvx simulés) ;
                           FIXTURES-VULNERABLES.json déclare, datée et motivée, chaque manifeste volontairement vulnérable : les alertes de dépendances
-                          que l'hébergeur signale sur ce dépôt viennent d'eux seuls, la forge n'a aucune dépendance réelle (le self-test tient la liste exacte, TF-2539)
+                          que l'hébergeur signale sur ce dépôt viennent d'eux seuls, la forge n'a aucune dépendance réelle (le self-test tient la liste exacte, TF-2539) ;
+                          ces manifestes vulnérables sont rangés sous « <nom>.fixture » (l'hébergeur ne les lit pas) et le self-test les rejoue sous leur vrai nom
+                          dans un dossier temporaire (TF-2579) : en ajouter un, c'est le ranger ainsi et le déclarer avec `rejoue_sous`
   dast/                   autorisations synthétiques (valide/expirée/production/incomplète, actif,
                           actif avec options), rapports ZAP synthétiques (propre/vulnérable), seuils
                           desserrés, zap-simule.mjs (ZAP simulé du self-test), docker-simule.mjs (Docker

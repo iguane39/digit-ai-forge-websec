@@ -28,6 +28,26 @@ const ORACLE_EXPOSITION = path.join(HERE, "oracle-exposition.mjs");
 const ORACLE_SCA = path.join(HERE, "oracle-sca.mjs");
 const ORACLE_DAST = path.join(HERE, "oracle-dast.mjs");
 
+// Les fixtures SCA vulnérables sont rangées sous un nom que l'hébergeur ne lit pas (`<nom>.fixture`, TF-2579, D-220 (a)) : FXR(cas)
+// les recopie sous leur vrai nom (`rejoue_sous`, tenu par fixtures/sca/FIXTURES-VULNERABLES.json) dans un dossier temporaire, que
+// l'oracle SCA juge sans être modifié ; retirerRejeux() retire ces dossiers avant le bilan, et à la sortie quoi qu'il arrive.
+const REJEUX = [];
+const fichiersDeclares = (declaration) => (declaration?.fixtures_vulnerables || []).flatMap((l) => [l, ...(l.compagnons || [])]);
+function FXR(cas) {
+  const declaration = JSON.parse(fs.readFileSync(FX("sca", "FIXTURES-VULNERABLES.json"), "utf8"));
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), `websec-rejeu-${cas}-`));
+  REJEUX.push(dossier);
+  fs.cpSync(FX("sca", cas), dossier, { recursive: true });
+  for (const f of fichiersDeclares(declaration)) {
+    if (path.posix.dirname(f.manifeste) !== `fixtures/sca/${cas}`) continue;
+    if (!fs.existsSync(path.join(dossier, path.posix.basename(f.manifeste)))) throw new Error(`fixture déclarée absente : ${f.manifeste} (rangée sous un autre nom ? la déclaration FIXTURES-VULNERABLES.json et le dossier doivent s'accorder)`);
+    fs.renameSync(path.join(dossier, path.posix.basename(f.manifeste)), path.join(dossier, f.rejoue_sous));
+  }
+  return dossier;
+}
+function retirerRejeux() { for (const d of REJEUX.splice(0)) fs.rmSync(d, { recursive: true, force: true }); }
+process.on("exit", retirerRejeux);
+
 let pass = 0, echec = 0, note = 0;
 const ok = (b, m) => { console.log(`  [${b ? "PASS" : "FAIL"}] ${m}`); b ? pass++ : echec++; };
 const skipNote = (m) => { console.log(`  [SKIP] ${m}`); note++; };
@@ -95,7 +115,7 @@ console.log(`  outillage détecté : npm=${npmDispo ? "présent" : "absent"} pip
 if (!npmDispo) {
   skipNote("npm absent du poste — sens rouge SCA-NPM non démontrable, self-test ne compte ni PASS ni FAIL");
 } else {
-  const r = runJson(ORACLE_SCA, [FX("sca", "npm-vulnerable")]);
+  const r = runJson(ORACLE_SCA, [FXR("npm-vulnerable")]);
   if (r.verdict === "SKIP") skipNote(`npm présent mais audit indisponible (probable absence réseau vers le registre) — sens rouge SCA-NPM non démontré cette exécution : ${JSON.stringify(r.findings)}`);
   else ok(r.verdict === "FAIL" && aRegle(r, "SCA-NPM"), `npm-vulnerable (lodash 4.17.15) → FAIL avec SCA-NPM (obtenu ${r.verdict})`);
 }
@@ -112,7 +132,7 @@ if (!npmDispo) {
 if (!pipVoie) {
   skipNote(`ni pip-audit ni uvx sur le poste — sens rouge SCA-PIP non démontrable ; pour le jouer : ${remedePipAbsent()}`);
 } else {
-  const r = runJson(ORACLE_SCA, [FX("sca", "pip-vulnerable")], undefined, 300000);
+  const r = runJson(ORACLE_SCA, [FXR("pip-vulnerable")], undefined, 300000);
   if (r.verdict === "SKIP") skipNote(`${pipVoie} présent mais audit indisponible (base d'avisos injoignable) — sens rouge SCA-PIP non démontré cette exécution : ${JSON.stringify(r.findings)}`);
   else ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP"), `pip-vulnerable (django 1.4) → FAIL avec SCA-PIP (obtenu ${r.verdict})`);
 }
@@ -160,7 +180,7 @@ if (!pipVoie) {
   const rien = { WEBSEC_SCA_PIP_AUDIT: ABSENT, WEBSEC_SCA_UVX: ABSENT };
   const causes = (r) => (r.manques || []).map((m) => m.cause).join(" | ");
 
-  let r = runJson(ORACLE_SCA, [FX("sca", "uv-vulnerable")], viaUvx);
+  let r = runJson(ORACLE_SCA, [FXR("uv-vulnerable")], viaUvx);
   ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && (r.findings || []).some((f) => f.regle === "SCA-PIP" && /django 1\.4/.test(f.msg)),
     `uv.lock avec django 1.4, pip-audit absent, uvx présent → FAIL avec SCA-PIP sur django 1.4 (obtenu ${r.verdict})`);
   ok(r.synthese && r.synthese.pip && r.synthese.pip.outil === "uvx pip-audit" && r.synthese.pip.total_paquets === 1,
@@ -188,7 +208,7 @@ if (!pipVoie) {
   ok(r.verdict === "PASS" && r.synthese.pip && r.synthese.pip.total_paquets === 3,
     `uv.lock avec deux versions du même paquet → PASS, 3 paquets jugés en deux lots (pip-audit refuse deux versions du même nom dans un fichier) (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip)})`);
 
-  r = runJson(ORACLE_SCA, [FX("sca", "poetry-vulnerable")], viaUvx);
+  r = runJson(ORACLE_SCA, [FXR("poetry-vulnerable")], viaUvx);
   ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && r.synthese.pip && r.synthese.pip.total_paquets === 1 && /paquet-git/.test(causes(r)),
     `poetry.lock avec django 1.4 → FAIL avec SCA-PIP ; la table [package.dependencies] n'est pas lue comme un paquet, le paquet git est nommé au manque (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip)})`);
   r = runJson(ORACLE_SCA, [FX("sca", "poetry-propre")], viaUvx);
@@ -196,13 +216,13 @@ if (!pipVoie) {
     `poetry.lock sans avis (2 paquets) → PASS (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip)})`);
 
   fs.rmSync(trace, { force: true });
-  r = runJson(ORACLE_SCA, [FX("sca", "uv-vulnerable")], direct);
+  r = runJson(ORACLE_SCA, [FXR("uv-vulnerable")], direct);
   ok(r.verdict === "FAIL" && r.synthese.pip && r.synthese.pip.outil === "pip-audit" && lireTrace().length > 0 && lireTrace().every((a) => a.mode === "direct"),
     `pip-audit présent, uvx absent → pip-audit est lancé directement, sans uvx (obtenu ${r.verdict}, ${JSON.stringify(r.synthese && r.synthese.pip && r.synthese.pip.outil)})`);
   ok(typeof delaiUvx === "number" && delaiUvx >= 180 && r.synthese.pip.delai_s === delaiUvx,
     `le délai de la voie directe suit celui de la voie uvx, au moins 180 s (obtenu directe ${r.synthese.pip.delai_s} s, uvx ${delaiUvx} s)`);
 
-  r = runJson(ORACLE_SCA, [FX("sca", "pip-vulnerable")], viaUvx);
+  r = runJson(ORACLE_SCA, [FXR("pip-vulnerable")], viaUvx);
   ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && r.synthese.pip.outil === "uvx pip-audit",
     `requirements.txt avec django 1.4, pip-audit absent, uvx présent → FAIL avec SCA-PIP via uvx (obtenu ${r.verdict})`);
 
@@ -299,13 +319,13 @@ if (!pipVoie) {
     skipNote(`ni pip-audit ni uvx sur le poste — sens rouge SCA-PIP sur uv.lock / poetry.lock non démontré avec l'outil réel ; pour le jouer : ${remedePipAbsent()}`);
   } else {
     for (const cas of ["uv-vulnerable", "poetry-vulnerable"]) {
-      const r = runJson(ORACLE_SCA, [FX("sca", cas)]);
+      const r = runJson(ORACLE_SCA, [FXR(cas)]);
       if (r.verdict === "SKIP") skipNote(`${cas} : audit indisponible avec l'outil réel (probable absence réseau) — sens rouge non démontré cette exécution : ${r.motif}`);
       else ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP"), `${cas} (django 1.4) → FAIL avec SCA-PIP, outil réel « ${r.synthese && r.synthese.pip && r.synthese.pip.outil} » (obtenu ${r.verdict})`);
     }
     // la voie uvx RÉELLE : pip-audit déclaré absent (chemin injouable), uvx du poste lancé pour de bon
     if (uvxDispo) {
-      const r = runJson(ORACLE_SCA, [FX("sca", "uv-vulnerable")], { WEBSEC_SCA_PIP_AUDIT: path.join(os.tmpdir(), "websec-outil-absent") });
+      const r = runJson(ORACLE_SCA, [FXR("uv-vulnerable")], { WEBSEC_SCA_PIP_AUDIT: path.join(os.tmpdir(), "websec-outil-absent") });
       if (r.verdict === "SKIP") skipNote(`uvx réel : audit indisponible (probable absence réseau) — voie uvx non démontrée avec l'outil réel cette exécution : ${r.motif}`);
       else ok(r.verdict === "FAIL" && aRegle(r, "SCA-PIP") && r.synthese.pip.outil === "uvx pip-audit", `uv-vulnerable, pip-audit absent, VRAI uvx du poste → FAIL avec SCA-PIP via « uvx pip-audit » (obtenu ${r.verdict}, ${r.synthese && r.synthese.pip && r.synthese.pip.outil})`);
     } else {
@@ -1831,18 +1851,21 @@ console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2498 : le mode passif 
 // le déclare (date, motif, épingle, compte relevé) ; ce bloc la tient exacte : un manifeste `*-vulnerable` ajouté sans déclaration, une
 // déclaration sans manifeste, une épingle qui a changé, un motif ou une date vides, des comptes qui ne s'additionnent plus, ou un manifeste
 // hors fixtures/sca non déclaré parmi les dépendances réelles sont refusés. Le compte de l'hébergeur est rapporté, non rejoué (le self-test ne le contacte pas).
+// TF-2579 (D-220 (a), 15/11/2026) : chaque manifeste vulnérable est rangé sous un nom que l'hébergeur ne lit pas (`<nom>.fixture`) et déclare le
+// nom sous lequel la recette le rejoue (`rejoue_sous`) ; la liste des noms que l'hébergeur lit est déclarée avec sa source, et un manifeste de
+// fixture rangé sous l'un d'eux (le vrai nom repris) est refusé.
 {
   const MANIFESTES_VERROU = new Set(["package-lock.json", "requirements.txt", "uv.lock", "poetry.lock", "yarn.lock", "pnpm-lock.yaml", "Pipfile.lock"]);
   const estManifeste = (nom) => MANIFESTES_VERROU.has(nom) || nom === "package.json" || nom === "pyproject.toml" || /^requirements.*\.txt$/.test(nom);
   const racineDepot = path.join(HERE, "..");
   const versLire = (...p) => p.join("/");
-  // Ce que le disque porte : le texte de chaque manifeste des dossiers `*-vulnerable`, et les manifestes hors fixtures/sca.
+  // Ce que le disque porte : le texte de chaque fichier des dossiers `*-vulnerable`, et les manifestes hors fixtures/sca.
   const lireDisque = (racine) => {
     const vulnerables = {};
     const dossierSca = path.join(racine, "fixtures", "sca");
     for (const d of fs.existsSync(dossierSca) ? fs.readdirSync(dossierSca, { withFileTypes: true }) : []) {
       if (!d.isDirectory() || !/-vulnerable$/.test(d.name)) continue;
-      for (const f of fs.readdirSync(path.join(dossierSca, d.name))) if (MANIFESTES_VERROU.has(f)) vulnerables[versLire("fixtures", "sca", d.name, f)] = fs.readFileSync(path.join(dossierSca, d.name, f), "utf8");
+      for (const f of fs.readdirSync(path.join(dossierSca, d.name))) vulnerables[versLire("fixtures", "sca", d.name, f)] = fs.readFileSync(path.join(dossierSca, d.name, f), "utf8");
     }
     const horsFixtures = [];
     const marcher = (dir, rel) => {
@@ -1855,17 +1878,32 @@ console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2498 : le mode passif 
     marcher(racine, "");
     return { vulnerables, horsFixtures: horsFixtures.sort() };
   };
+  // Les noms que l'hébergeur lit comme manifeste, tels que la déclaration les porte (une donnée sourcée, pas du code) : noms exacts et motifs.
+  const luParHebergeur = (declaration) => {
+    const noms = new Set((declaration?.noms_lus_par_hebergeur?.noms || []).map((n) => n.toLowerCase()));
+    const motifs = (declaration?.noms_lus_par_hebergeur?.motifs || []).map((m) => new RegExp(m, "i"));
+    return (nom) => noms.has(nom.toLowerCase()) || motifs.some((r) => r.test(nom));
+  };
   const defautsDeclaration = (declaration, disque) => {
     const d = [];
     const lignes = declaration?.fixtures_vulnerables;
     if (!Array.isArray(lignes)) return ["fixtures_vulnerables absent ou illisible"];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(declaration.declare_le || "")) d.push("declare_le n'est pas une date AAAA-MM-JJ");
-    const declares = new Map(lignes.map((l) => [l.manifeste, l]));
-    for (const m of Object.keys(disque.vulnerables)) if (!declares.has(m)) d.push(`${m} est un manifeste vulnérable non déclaré`);
+    const hebergeur = declaration.noms_lus_par_hebergeur || {};
+    if (!Array.isArray(hebergeur.noms) || !hebergeur.noms.length || !String(hebergeur.source || "").trim() || !/^\d{4}-\d{2}-\d{2}$/.test(hebergeur.relevee_le || "")) d.push("noms_lus_par_hebergeur : liste, source ou date de relevé vide");
+    const lu = luParHebergeur(declaration);
+    const declares = new Map(fichiersDeclares(declaration).map((l) => [l.manifeste, l]));
+    for (const m of Object.keys(disque.vulnerables)) {
+      if (!declares.has(m)) d.push(`${m} est un manifeste vulnérable non déclaré`);
+      if (lu(path.posix.basename(m))) d.push(`${m} est un manifeste de fixture rangé sous un nom que l'hébergeur lit (le ranger sous « ${path.posix.basename(m)}.fixture » et le déclarer avec rejoue_sous)`);
+    }
     for (const [m, l] of declares) {
       const texte = disque.vulnerables[m];
       if (texte === undefined) { d.push(`${m} est déclaré mais absent des dossiers *-vulnerable`); continue; }
       if (!String(l.motif || "").trim()) d.push(`${m} : motif vide`);
+      if (!String(l.rejoue_sous || "").trim()) d.push(`${m} : rejoue_sous vide (le nom sous lequel la recette le rejoue)`);
+      else if (path.posix.basename(m) !== `${l.rejoue_sous}.fixture`) d.push(`${m} : le nom rangé doit être « ${l.rejoue_sous}.fixture » (nom rejoué suivi de .fixture)`);
+      if (!lignes.includes(l)) continue; // un compagnon n'a ni épingle ni compte d'alertes : il suit son manifeste
       const { paquet, version } = l.epingle || {};
       const epingle = paquet && version && new RegExp(`${paquet}[\\s\\S]{0,40}(?<![\\d.])${version.replace(/\./g, "\\.")}(?![\\d.])`, "i");
       if (!epingle || !epingle.test(texte)) d.push(`${m} : l'épingle déclarée « ${paquet} ${version} » n'y figure plus`);
@@ -1885,22 +1923,38 @@ console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2498 : le mode passif 
   const declaration = JSON.parse(fs.readFileSync(FX("sca", "FIXTURES-VULNERABLES.json"), "utf8"));
   const disque = lireDisque(racineDepot);
   const defReel = defautsDeclaration(declaration, disque);
-  ok(defReel.length === 0 && Object.keys(disque.vulnerables).length >= 4,
-    `TF-2539 · VERT — les ${Object.keys(disque.vulnerables).length} manifestes vulnérables de fixtures/sca sont déclarés (date, motif, épingle, compte relevé), et le dépôt ne porte aucune dépendance réelle hors fixtures${defReel.length ? " (défauts : " + defReel.join(" ; ") + ")" : ""}`);
+  ok(defReel.length === 0 && Object.keys(disque.vulnerables).length >= 5,
+    `TF-2539 · VERT — les ${Object.keys(disque.vulnerables).length} manifestes vulnérables de fixtures/sca sont déclarés (date, motif, épingle, compte relevé, nom rejoué), aucun n'est rangé sous un nom que l'hébergeur lit, et le dépôt ne porte aucune dépendance réelle hors fixtures${defReel.length ? " (défauts : " + defReel.join(" ; ") + ")" : ""}`);
   const copie = (o) => JSON.parse(JSON.stringify(o));
   const disqueCopie = () => ({ vulnerables: { ...disque.vulnerables }, horsFixtures: [...disque.horsFixtures] });
   // ROUGE : un manifeste vulnérable ajouté sans déclaration (l'oubli de demain)
-  const avecNouveau = disqueCopie(); avecNouveau.vulnerables["fixtures/sca/go-vulnerable/requirements.txt"] = "django==1.4\n";
-  ok(defautsDeclaration(declaration, avecNouveau).some((x) => /go-vulnerable\/requirements\.txt est un manifeste vulnérable non déclaré/.test(x)), "TF-2539 · ROUGE — un manifeste *-vulnerable sans déclaration est refusé");
+  const avecNouveau = disqueCopie(); avecNouveau.vulnerables["fixtures/sca/go-vulnerable/requirements.txt.fixture"] = "django==1.4\n";
+  ok(defautsDeclaration(declaration, avecNouveau).some((x) => /go-vulnerable\/requirements\.txt\.fixture est un manifeste vulnérable non déclaré/.test(x)), "TF-2539 · ROUGE — un manifeste *-vulnerable sans déclaration est refusé");
   // ROUGE : une déclaration sans manifeste
-  const sansManifeste = disqueCopie(); delete sansManifeste.vulnerables["fixtures/sca/uv-vulnerable/uv.lock"];
-  ok(defautsDeclaration(declaration, sansManifeste).some((x) => /uv-vulnerable\/uv\.lock est déclaré mais absent/.test(x)), "TF-2539 · ROUGE — une déclaration dont le manifeste a disparu est refusée");
+  const sansManifeste = disqueCopie(); delete sansManifeste.vulnerables["fixtures/sca/uv-vulnerable/uv.lock.fixture"];
+  ok(defautsDeclaration(declaration, sansManifeste).some((x) => /uv-vulnerable\/uv\.lock\.fixture est déclaré mais absent/.test(x)), "TF-2539 · ROUGE — une déclaration dont le manifeste a disparu est refusée");
   // ROUGE : l'épingle a changé (la fixture n'est plus vulnérable comme déclarée) ; le texte voisin « 1.4.2 » ne vaut pas « 1.4 »
-  const autreVersion = disqueCopie(); autreVersion.vulnerables["fixtures/sca/pip-vulnerable/requirements.txt"] = "django==1.4.2\n";
-  ok(defautsDeclaration(declaration, autreVersion).some((x) => /pip-vulnerable\/requirements\.txt : l'épingle déclarée « django 1\.4 » n'y figure plus/.test(x)), "TF-2539 · ROUGE — une épingle déclarée que le manifeste ne porte plus est refusée (1.4.2 n'est pas 1.4)");
+  const autreVersion = disqueCopie(); autreVersion.vulnerables["fixtures/sca/pip-vulnerable/requirements.txt.fixture"] = "django==1.4.2\n";
+  ok(defautsDeclaration(declaration, autreVersion).some((x) => /pip-vulnerable\/requirements\.txt\.fixture : l'épingle déclarée « django 1\.4 » n'y figure plus/.test(x)), "TF-2539 · ROUGE — une épingle déclarée que le manifeste ne porte plus est refusée (1.4.2 n'est pas 1.4)");
   // ROUGE : motif vide, date invalide
   const sansMotif = copie(declaration); sansMotif.fixtures_vulnerables[0].motif = "  ";
-  ok(defautsDeclaration(sansMotif, disque).some((x) => /npm-vulnerable\/package-lock\.json : motif vide/.test(x)), "TF-2539 · ROUGE — une fixture déclarée sans motif est refusée");
+  ok(defautsDeclaration(sansMotif, disque).some((x) => /npm-vulnerable\/package-lock\.json\.fixture : motif vide/.test(x)), "TF-2539 · ROUGE — une fixture déclarée sans motif est refusée");
+  // TF-2579 · ROUGE : une fixture qui reprend son vrai nom (l'hébergeur la relirait comme dépendance) ; VERT une fois rangée sous « .fixture » (le remède du message)
+  const deplacer = (o, de, vers) => { o.vulnerables[vers] = o.vulnerables[de]; delete o.vulnerables[de]; return o; };
+  for (const [cas, nom] of [["pip-vulnerable", "requirements.txt"], ["uv-vulnerable", "uv.lock"], ["poetry-vulnerable", "poetry.lock"], ["npm-vulnerable", "package-lock.json"], ["npm-vulnerable", "package.json"]]) {
+    const reprise = deplacer(disqueCopie(), `fixtures/sca/${cas}/${nom}.fixture`, `fixtures/sca/${cas}/${nom}`);
+    ok(defautsDeclaration(declaration, reprise).some((x) => new RegExp(`${cas}/${nom.replace(/\./g, "\\.")} est un manifeste de fixture rangé sous un nom que l'hébergeur lit`).test(x)),
+      `TF-2579 · ROUGE — ${cas}/${nom} rangé sous son vrai nom est refusé (l'hébergeur le lirait comme une dépendance du dépôt)`);
+    const remede = deplacer(reprise, `fixtures/sca/${cas}/${nom}`, `fixtures/sca/${cas}/${nom}.fixture`);
+    ok(defautsDeclaration(declaration, remede).length === 0, `TF-2579 · VERT — ${cas}/${nom} rangé sous « ${nom}.fixture » (le remède que le message propose) est accepté`);
+  }
+  // TF-2579 · ROUGE : un nom rangé qui n'est pas « nom rejoué + .fixture », un nom rejoué absent, une liste de noms lus sans source
+  const autreRejeu = copie(declaration); autreRejeu.fixtures_vulnerables[1].rejoue_sous = "requirements-dev.txt";
+  ok(defautsDeclaration(autreRejeu, disque).some((x) => /pip-vulnerable\/requirements\.txt\.fixture : le nom rangé doit être « requirements-dev\.txt\.fixture »/.test(x)), "TF-2579 · ROUGE — un nom rangé qui n'est pas le nom rejoué suivi de .fixture est refusé");
+  const sansRejeu = copie(declaration); delete sansRejeu.fixtures_vulnerables[2].rejoue_sous;
+  ok(defautsDeclaration(sansRejeu, disque).some((x) => /uv-vulnerable\/uv\.lock\.fixture : rejoue_sous vide/.test(x)), "TF-2579 · ROUGE — une fixture déclarée sans nom rejoué est refusée");
+  const sansSource = copie(declaration); sansSource.noms_lus_par_hebergeur.source = " ";
+  ok(defautsDeclaration(sansSource, disque).some((x) => /noms_lus_par_hebergeur : liste, source ou date de relevé vide/.test(x)), "TF-2579 · ROUGE — la liste des noms lus par l'hébergeur sans source est refusée");
   const sansDate = copie(declaration); sansDate.declare_le = "hier";
   ok(defautsDeclaration(sansDate, disque).some((x) => /declare_le n'est pas une date/.test(x)), "TF-2539 · ROUGE — une déclaration sans date valide est refusée");
   // ROUGE : les comptes du relevé ne s'additionnent plus
@@ -1914,6 +1968,22 @@ console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2498 : le mode passif 
   const reelleDeclaree = copie(declaration); reelleDeclaree.dependances_reelles.manifestes = ["package.json"];
   ok(defautsDeclaration(reelleDeclaree, avecReelle).length === 0, "TF-2539 · VERT — le même manifeste réel, une fois déclaré parmi les dépendances réelles, est accepté (le remède que le message propose passe)");
   ok(defautsDeclaration(reelleDeclaree, disque).some((x) => /package\.json est déclaré dépendance réelle mais absent du dépôt/.test(x)), "TF-2539 · ROUGE — une dépendance réelle déclarée mais absente du dépôt est refusée");
+}
+
+// ── TF-2579 · le rejeu sous le vrai nom : recopié dans un dossier temporaire, jamais dans le dépôt, puis retiré ──────────────
+{
+  const declaration = JSON.parse(fs.readFileSync(FX("sca", "FIXTURES-VULNERABLES.json"), "utf8"));
+  for (const cas of ["pip-vulnerable", "uv-vulnerable", "poetry-vulnerable", "npm-vulnerable"]) {
+    const dossier = FXR(cas);
+    const attendus = fichiersDeclares(declaration).filter((f) => path.posix.dirname(f.manifeste) === `fixtures/sca/${cas}`);
+    ok(attendus.length > 0 && attendus.every((f) => fs.existsSync(path.join(dossier, f.rejoue_sous)) && !fs.existsSync(path.join(dossier, path.posix.basename(f.manifeste)))),
+      `TF-2579 · VERT — ${cas} est rejoué sous ${attendus.map((f) => f.rejoue_sous).join(" + ")}, sans copie « .fixture » dans le dossier de rejeu`);
+    ok(attendus.every((f) => !fs.existsSync(FX("sca", cas, f.rejoue_sous))) && !path.resolve(dossier).startsWith(path.resolve(HERE, "..")),
+      `TF-2579 · VERT — ${cas} : le vrai nom n'est jamais écrit dans le dépôt, le dossier de rejeu est hors de l'arbre`);
+  }
+  const tous = [...REJEUX]; // ceux des cas SCA ci-dessus et les quatre de ce bloc
+  retirerRejeux();
+  ok(tous.length >= 4 &&tous.every((d) => !fs.existsSync(d)) && REJEUX.length === 0, `TF-2579 · VERT — les ${tous.length} dossiers de rejeu sont retirés avant le bilan (aucun reste)`);
 }
 
 console.log(`\nSelf-test forge-websec : ${pass} PASS, ${echec} FAIL, ${note} SKIP motivé (outillage/réseau du poste, non comptés)`);

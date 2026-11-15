@@ -5,6 +5,19 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-15 — les manifestes de fixtures vulnérables ne sont plus lus par l'hébergeur comme des dépendances (TF-2579, D-220 (a))
+
+- **Effet** : les cinq fichiers des fixtures SCA vulnérables prennent un nom que l'hébergeur ne lit pas, le nom complet suivi de `.fixture`
+  (`package-lock.json.fixture` et son `package.json.fixture`, `requirements.txt.fixture`, `uv.lock.fixture`, `poetry.lock.fixture`). Les 155
+  alertes ouvertes (18 critiques, relevé en lecture rejoué le 15/11/2026, mêmes quatre manifestes) viennent de ces seuls manifestes ; l'hébergeur
+  devrait les clore de lui-même après la publication, à vérifier au relevé suivant (rien n'est fermé ni rejeté de notre côté). `oracle-sca` est
+  inchangé : le self-test recopie chaque fixture sous son vrai nom dans un dossier temporaire (`FXR`), le juge, puis retire le dossier.
+- **Déclaration** : `fixtures/sca/FIXTURES-VULNERABLES.json` nomme, pour chaque fixture, le chemin rangé et le nom rejoué (`rejoue_sous`), et porte la
+  liste des noms que l'hébergeur lit avec sa source (tableau des écosystèmes du graphe de dépendances de GitHub, relevé le 15/11/2026).
+- **Garde** : bloc TF-2539 du self-test, avec un rouge et son remède joué pour chacun des cinq fichiers (la fixture reprend son vrai nom : refusée ;
+  rangée sous `.fixture` : acceptée), un nom rangé qui n'est pas « nom rejoué + `.fixture` », un nom rejoué absent, une liste de noms sans source ;
+  et un contrôle que le rejeu ne se fait jamais dans le dépôt et que les dossiers temporaires sont retirés.
+
 ## 2026-11-14 — les alertes de dépendances de l'hébergeur sont toutes des fixtures de l'oracle SCA, déclarées comme telles (TF-2539, part forge-websec)
 
 - **Effet** : l'hébergeur signalait 155 alertes de dépendances ouvertes sur la branche par défaut, dont 18 critiques (relevé en lecture le

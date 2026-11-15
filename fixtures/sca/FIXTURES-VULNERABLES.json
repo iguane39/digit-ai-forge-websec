@@ -1,18 +1,51 @@
 {
   "declare_le": "2026-11-14",
+  "cachee_le": "2026-11-15",
   "id": "TF-2539",
-  "objet": "Les manifestes de ce dossier qui portent volontairement une dépendance vulnérable. oracle-sca doit les juger FAIL : ce sont les fixtures du sens rouge, pas des dépendances du dépôt. L'hébergeur les signale à tort comme des dépendances réelles ; cette liste est la déclaration qui les distingue, et le self-test (bloc TF-2539) la tient exacte.",
+  "cachee_par": "TF-2579 (D-220 (a) du 15/11/2026)",
+  "objet": "Les manifestes de ce dossier qui portent volontairement une dépendance vulnérable. oracle-sca doit les juger FAIL : ce sont les fixtures du sens rouge, pas des dépendances du dépôt. L'hébergeur les signalait à tort comme des dépendances réelles (155 alertes le 14/11/2026) ; cette liste est la déclaration qui les distingue, et le self-test (bloc TF-2539) la tient exacte. Depuis le 15/11/2026 (TF-2579), chacun est rangé sous un nom que l'hébergeur ne lit pas (le nom complet suivi de .fixture) ; le self-test le recopie sous son vrai nom (`rejoue_sous`) dans un dossier temporaire avant de jouer oracle-sca, puis retire ce dossier, et refuse tout manifeste de fixture rangé sous un nom que l'hébergeur lit.",
+  "noms_lus_par_hebergeur": {
+    "relevee_le": "2026-11-15",
+    "source": "https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/dependency-graph-supported-package-ecosystems (tableau « Supported package ecosystems », colonnes des fichiers de verrouillage et des manifestes) ; uv.lock s'y ajoute, constaté : l'hébergeur a ouvert 50 alertes sur fixtures/sca/uv-vulnerable/uv.lock (relevé du 14/11/2026), https://docs.github.com/en/code-security/dependabot/ecosystems-supported-by-dependabot/supported-ecosystems-and-repositories",
+    "noms": [
+      "MODULE.bazel", "WORKSPACE", "MODULE.bazel.lock", "maven_install.json",
+      "Cargo.lock", "Cargo.toml",
+      "composer.lock", "composer.json",
+      "deno.lock", "deno.json", "deno.jsonc",
+      "package-lock.json", "package.json", "pnpm-lock.yaml", "yarn.lock",
+      ".terraform.lock.hcl",
+      "requirements.txt", "pipfile.lock", "Pipfile.lock", "pipfile", "Pipfile", "setup.py",
+      "poetry.lock", "pyproject.toml", "uv.lock",
+      "pubspec.lock", "pubspec.yaml",
+      "Gemfile.lock", "Gemfile"
+    ],
+    "motifs": [
+      "^requirements.*\\.txt$",
+      "\\.gemspec$",
+      "\\.MODULE\\.bazel$",
+      "\\.(tf|tofu)$"
+    ],
+    "note": "Les motifs couvrent ce que le tableau nomme par extension (*.gemspec, *.tf, *.tofu, *.MODULE.bazel) et, par précaution, tout requirements*.txt : le tableau ne nomme que requirements.txt, la précaution n'est pas une lecture constatée. Un nom rangé qui finit par .fixture ne correspond à aucun nom ni motif de cette liste."
+  },
   "releve_hebergeur": {
     "le": "2026-11-14",
     "commande": "gh api repos/iguane39/digit-ai-forge-websec/dependabot/alerts --paginate",
     "alertes_ouvertes": 155,
     "dont_critiques": 18,
     "hors_fixtures": 0,
-    "note": "Compte rapporté du relevé du 14/11/2026, non rejoué par le self-test (il ne contacte pas l'hébergeur). Chaque alerte est portée par un manifeste ci-dessous ; aucune ne l'est par un manifeste hors fixtures/sca."
+    "note": "Compte du relevé du 14/11/2026, rejoué en lecture le 15/11/2026 avant le renommage (155 ouvertes, dont 18 critiques, mêmes 4 manifestes) ; non rejoué par le self-test (il ne contacte pas l'hébergeur). Chaque alerte est portée par un manifeste ci-dessous ; aucune ne l'est par un manifeste hors fixtures/sca. Après publication du renommage (TF-2579), l'hébergeur doit clore ces alertes de lui-même : à vérifier au relevé suivant, en lecture."
   },
   "fixtures_vulnerables": [
     {
-      "manifeste": "fixtures/sca/npm-vulnerable/package-lock.json",
+      "manifeste": "fixtures/sca/npm-vulnerable/package-lock.json.fixture",
+      "rejoue_sous": "package-lock.json",
+      "compagnons": [
+        {
+          "manifeste": "fixtures/sca/npm-vulnerable/package.json.fixture",
+          "rejoue_sous": "package.json",
+          "motif": "Manifeste qui accompagne le verrou : oracle-sca exige package.json et package-lock.json ensemble. Rangé lui aussi sous un nom que l'hébergeur ne lit pas, sinon il le lirait comme la dépendance lodash 4.17.15 du dépôt."
+        }
+      ],
       "ecosysteme": "npm",
       "epingle": { "paquet": "lodash", "version": "4.17.15" },
       "joue_par": "oracle-sca, sens rouge npm (npm audit)",
@@ -20,7 +53,8 @@
       "alertes_hebergeur": { "total": 5, "critiques": 0 }
     },
     {
-      "manifeste": "fixtures/sca/pip-vulnerable/requirements.txt",
+      "manifeste": "fixtures/sca/pip-vulnerable/requirements.txt.fixture",
+      "rejoue_sous": "requirements.txt",
       "ecosysteme": "pip",
       "epingle": { "paquet": "django", "version": "1.4" },
       "joue_par": "oracle-sca, sens rouge pip (pip-audit, direct ou par uvx)",
@@ -28,7 +62,8 @@
       "alertes_hebergeur": { "total": 50, "critiques": 6 }
     },
     {
-      "manifeste": "fixtures/sca/uv-vulnerable/uv.lock",
+      "manifeste": "fixtures/sca/uv-vulnerable/uv.lock.fixture",
+      "rejoue_sous": "uv.lock",
       "ecosysteme": "pip",
       "epingle": { "paquet": "django", "version": "1.4" },
       "joue_par": "oracle-sca, sens rouge uv.lock (pip-audit, direct ou par uvx)",
@@ -36,7 +71,8 @@
       "alertes_hebergeur": { "total": 50, "critiques": 6 }
     },
     {
-      "manifeste": "fixtures/sca/poetry-vulnerable/poetry.lock",
+      "manifeste": "fixtures/sca/poetry-vulnerable/poetry.lock.fixture",
+      "rejoue_sous": "poetry.lock",
       "ecosysteme": "pip",
       "epingle": { "paquet": "django", "version": "1.4" },
       "joue_par": "oracle-sca, sens rouge poetry.lock (pip-audit, direct ou par uvx)",
@@ -48,5 +84,5 @@
     "manifestes": [],
     "constat": "Aucune. La forge n'a aucune dépendance propre (CLAUDE.md : zéro dépendance npm propre) : oracle-sca et oracle-dast délèguent à l'outillage du poste. Il n'y a donc aucune mise à jour de dépendance à faire ici. Le jour où un manifeste réel apparaît hors de fixtures/, le self-test (bloc TF-2539) le refuse tant qu'il n'est pas traité."
   },
-  "regle_pour_une_nouvelle_fixture": "Une fixture dont le nom de dossier finit par -vulnerable s'ajoute à fixtures_vulnerables avec son épingle, son motif et le compte d'alertes de l'hébergeur quand il est connu ; sans cela le self-test la refuse."
+  "regle_pour_une_nouvelle_fixture": "Une fixture dont le nom de dossier finit par -vulnerable s'ajoute à fixtures_vulnerables avec son épingle, son motif, son nom rangé (le nom complet suivi de .fixture), son nom rejoué (rejoue_sous) et le compte d'alertes de l'hébergeur quand il est connu ; sans cela le self-test la refuse. Rangée sous le vrai nom d'un manifeste, il la refuse aussi."
 }
