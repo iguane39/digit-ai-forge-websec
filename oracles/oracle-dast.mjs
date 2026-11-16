@@ -42,8 +42,12 @@
 //   « actif » passif, un ZAP qui ne sait que le balayage rapide ne rend pas un « passif » qui
 //   attaque — SKIP motivé dans les deux cas (TF-2444 : le mode actif lançait la passe passive).
 // Options de balayage portées par le FICHIER d'autorisation (mêmes limites dans les deux modes) :
-//   `en_tete_acces` {nom, valeur | valeur_env} : en-tête ajouté à toute requête vers l'origine
-//                     autorisée (la valeur ne sort jamais dans le verdict) ;
+//   `en_tete_acces` {nom, valeur | valeur_env, jeton_service_access?} : en-tête ajouté à toute requête vers
+//                     l'origine autorisée (la valeur ne sort jamais dans le verdict). Pour une cible derrière
+//                     Cloudflare Access dont le jeton de service tient en UN en-tête, `jeton_service_access: true`
+//                     déclare ce cas : le nom ne peut alors être que « Authorization » (l'API d'Access refuse tout
+//                     autre nom) et la valeur est un objet JSON {"cf-access-client-id":"…","cf-access-client-secret":"…"}
+//                     (TF-2649) ;
 //   `debit_max_requetes_par_seconde` : un fil, un délai de ceil(1000/n) ms entre deux requêtes ;
 //   `exclusions` : chemins (« /deconnexion ») dont aucune requête ne part, préfixe compris ;
 //   `duree_max_minutes` : durée au-delà de laquelle ZAP est arrêté (TF-2486) ;
@@ -82,7 +86,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.3.3";
+const VERSION = "0.3.4";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -342,6 +346,12 @@ if (autz.en_tete_acces !== undefined) {
   const nom = ea && typeof ea === "object" ? ea.nom : undefined;
   if (typeof nom !== "string" || !/^[A-Za-z0-9-]+$/.test(nom)) {
     invalides.push("en_tete_acces.nom (nom d'en-tête HTTP attendu : lettres, chiffres et tirets)");
+  } else if (ea.jeton_service_access !== undefined && typeof ea.jeton_service_access !== "boolean") {
+    invalides.push("en_tete_acces.jeton_service_access (booléen attendu : true pour une cible derrière Cloudflare Access)");
+  } else if (ea.jeton_service_access === true && nom.toLowerCase() !== "authorization") {
+    // TF-2649 : l'API de Cloudflare refuse tout autre nom (« read_service_tokens_from_header must be one of [Authorization] »),
+    // et sa documentation ne le dit pas. Un autre nom ne passerait pas Access : le balayage n'aurait rien exploré de la cible.
+    invalides.push(`en_tete_acces.nom (« ${nom} » refusé pour un jeton de service Cloudflare Access en un seul en-tête : Access ne lit ce jeton que dans « Authorization », et sa valeur est un objet JSON {"cf-access-client-id":"…","cf-access-client-secret":"…"})`);
   } else {
     const aValeur = typeof ea.valeur === "string" && ea.valeur !== "";
     const aEnv = typeof ea.valeur_env === "string" && ea.valeur_env !== "";

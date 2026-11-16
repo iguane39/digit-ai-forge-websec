@@ -5,6 +5,22 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-16 — `oracle-dast` 0.3.4 : le jeton de service Cloudflare Access en un seul en-tête n'est accepté que sous « Authorization » (TF-2649)
+
+- **Effet** : le mandat peut déclarer `en_tete_acces.jeton_service_access: true` pour une cible derrière Cloudflare Access. L'oracle refuse alors
+  (`FAIL` `DAST-AUTZ-CHAMPS`, rien n'est lancé) tout nom d'en-tête autre que `Authorization`, comparé sans tenir compte de la casse, et le
+  message dit le nom accepté et la forme de la valeur (objet JSON `{"cf-access-client-id":"…","cf-access-client-secret":"…"}`). Avant, un
+  balayage partait avec `X-<nom>` et Access ne lisait pas le jeton : le produit l'a découvert par un refus de l'API de Cloudflare
+  (« read_service_tokens_from_header must be one of [Authorization] », mesuré le 13/11/2026 chez un produit, rapporté, non rejoué ici).
+  README (tableau des champs et section « Jeton de service Cloudflare Access ») et en-tête de l'oracle le documentent. `wstg-cas.md` passe à
+  0.2.6 (`oracle_dast: 0.3.4`) : aucun cas ni mode changé.
+- **Garde** : `oracles/self-test.mjs`, cas TF-2649 : deux rouges (`X-Produit-84-Access`, `CF-Access-Token`) refusés avec le nom accepté cité,
+  `jeton_service_access` non booléen refusé, et le remède joué (`Authorization` et `authorization` avec une valeur JSON assemblée à
+  l'exécution) qui lance le balayage simulé sans reprendre la valeur au verdict. Mesuré le 16/11/2026 sur l'état de départ : le même mandat
+  avec `X-Produit-84-Access` rendait PASS et lançait ZAP (1 lancement).
+- **Non fait** : la forme de la valeur JSON n'est pas contrôlée (seul le nom l'est, comme la décision l'écrit) ; l'oracle ne devine pas qu'une
+  cible est derrière Access, le mandat le déclare.
+
 ## 2026-11-15 — les manifestes de fixtures vulnérables ne sont plus lus par l'hébergeur comme des dépendances (TF-2579, D-220 (a))
 
 - **Effet** : les cinq fichiers des fixtures SCA vulnérables prennent un nom que l'hébergeur ne lit pas, le nom complet suivi de `.fixture`

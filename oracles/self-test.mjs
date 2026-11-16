@@ -517,6 +517,10 @@ function runDast(args, env) {
     ["en-tête avec valeur ET valeur_env", { en_tete_acces: { nom: "Authorization", valeur: "x", valeur_env: "WEBSEC_DAST_TEST_ACCES" } }, "exactement un"],
     ["en-tête sans valeur", { en_tete_acces: { nom: "Authorization" } }, "exactement un"],
     ["valeur d'en-tête avec saut de ligne", { en_tete_acces: { nom: "Authorization", valeur: "a\nb" } }, "caractère de contrôle"],
+    // TF-2649 : Cloudflare Access n'accepte le jeton de service en un seul en-tête que sous « Authorization » (13/11/2026, Produit-84-dev)
+    ["jeton de service Access sous un nom X-…", { en_tete_acces: { nom: "X-Produit-84-Access", valeur_env: "WEBSEC_DAST_TEST_ACCES", jeton_service_access: true } }, "refusé pour un jeton de service Cloudflare Access"],
+    ["jeton de service Access sous un autre nom usuel", { en_tete_acces: { nom: "CF-Access-Token", valeur_env: "WEBSEC_DAST_TEST_ACCES", jeton_service_access: true } }, "Access ne lit ce jeton que dans « Authorization »"],
+    ["jeton_service_access qui n'est pas un booléen", { en_tete_acces: { nom: "Authorization", valeur_env: "WEBSEC_DAST_TEST_ACCES", jeton_service_access: "oui" } }, "jeton_service_access"],
   ];
   for (const [libelle, variante, motif] of rouges) {
     const f = path.join(dossier, "autorisation-rouge.json");
@@ -524,6 +528,16 @@ function runDast(args, env) {
     const { r, lignes } = lancer(ZAP.complet, f, "actif");
     ok(r.verdict === "FAIL" && aRegle(r, "DAST-AUTZ-CHAMPS") && msgs(r).includes(motif) && lignes.length === 0,
       `${libelle} → FAIL DAST-AUTZ-CHAMPS qui cite « ${motif} », rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  // TF-2649 · le remède que le refus propose, joué : « Authorization » + valeur JSON, déclarés jeton de service Access → PASS.
+  // La valeur est assemblée à l'exécution (aucun identifiant ni secret, même fictif, n'est écrit dans le dépôt).
+  for (const nomEnTete of ["Authorization", "authorization"]) {
+    const f = path.join(dossier, "autorisation-access.json");
+    const jeton = JSON.stringify({ "cf-access-client-id": "fixture-id", "cf-access-client-secret": ["fixture", "non", "secret"].join("-") });
+    fs.writeFileSync(f, JSON.stringify({ ...valide, en_tete_acces: { nom: nomEnTete, valeur_env: "WEBSEC_DAST_TEST_ACCES", jeton_service_access: true } }));
+    const { r, lignes } = lancer(ZAP.complet, f, "actif", { WEBSEC_DAST_TEST_ACCES: jeton });
+    ok(r.verdict === "PASS" && lignes.length === 1 && dedans(optionsZ(lignes), `replacer.full_list(0).matchstr=${nomEnTete}`) && !JSON.stringify(r).includes("fixture-non-secret"),
+      `TF-2649 · VERT — jeton de service Access sous « ${nomEnTete} » avec sa valeur JSON → balayage lancé, valeur jamais reprise dans le verdict (obtenu ${r.verdict}, ${lignes.length} lancement)`);
   }
   {
     const { r, lignes } = lancer(ZAP.complet, AUTZ("autorisation-actif-options.json"), "actif", { WEBSEC_DAST_TEST_ACCES: "" });

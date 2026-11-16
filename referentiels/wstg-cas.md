@@ -1,7 +1,7 @@
 ---
-version: 0.2.5
+version: 0.2.6
 challenge_date: 2026-08-14
-oracle_dast: 0.3.3
+oracle_dast: 0.3.4
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
@@ -63,7 +63,7 @@ self-test compare chaque règle citée à la liste des règles de l'image.
 
 **Ajout du 14/11/2026 (0.2.4 et 0.2.5, TF-2498 et TF-2499).** Le mode passif ne soumet plus aucun formulaire (`oracle-dast` 0.3.2) : la
 section de ce mode le dit. Une section dit maintenant, cas par cas, ce que la voie Docker ne joue plus depuis `-silent`, les règles
-bêta de ZAP (`oracle-dast` 0.3.3, qui les consigne au verdict) ; `oracle_dast` du frontmatter suit la version 0.3.3.
+bêta de ZAP (`oracle-dast` 0.3.3, qui les consigne au verdict) ; `oracle_dast` du frontmatter suit la version de l'oracle (0.3.3, puis 0.3.4 le 16/11/2026 pour TF-2649, qui ne change ni mode ni cas : `wstg-cas.md` passe à 0.2.6).
 
 **Colonne « Outillage »** : `oracle-exposition` | `oracle-sca` | `oracle-dast` | `manuel` —
 jamais inventée. Un cas confié à `oracle-dast` nomme toujours le mode qui le lève, `passif` ou `actif` :

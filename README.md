@@ -246,11 +246,19 @@ Le fichier d'autorisation porte aussi les limites du balayage, les mêmes dans l
 
 | Champ | Effet sur ZAP | Mal formé |
 |---|---|---|
-| `en_tete_acces` `{nom, valeur}` ou `{nom, valeur_env}` | un en-tête ajouté à toute requête vers l'origine autorisée (règle `replacer`, bornée à cette origine) ; `valeur_env` nomme une variable d'environnement, pour ne pas écrire un secret dans le mandat | `DAST-AUTZ-CHAMPS` ; une variable absente refuse aussi le balayage |
+| `en_tete_acces` `{nom, valeur}` ou `{nom, valeur_env}`, avec `jeton_service_access: true` pour une cible derrière Cloudflare Access | un en-tête ajouté à toute requête vers l'origine autorisée (règle `replacer`, bornée à cette origine) ; `valeur_env` nomme une variable d'environnement, pour ne pas écrire un secret dans le mandat. Avec `jeton_service_access: true` (0.3.4, TF-2649), le jeton de service d'Access tient en un seul en-tête : le nom est `Authorization` et la valeur un objet JSON `{"cf-access-client-id":"…","cf-access-client-secret":"…"}` | `DAST-AUTZ-CHAMPS` ; une variable absente refuse aussi le balayage ; un autre nom que `Authorization` avec `jeton_service_access: true` est refusé |
 | `debit_max_requetes_par_seconde` (nombre, 0 < n ≤ 1000) | un fil et `ceil(1000/n)` ms entre deux requêtes, pour l'araignée et pour l'attaque | `DAST-AUTZ-CHAMPS` |
 | `exclusions` (liste de chemins, `/…`) | aucune requête vers l'origine autorisée + chemin (préfixe compris) : exclusion globale ZAP | `DAST-AUTZ-CHAMPS` |
 | `duree_max_minutes` (nombre, 0 < n ≤ 1440) | ZAP est arrêté au bout de cette durée | `DAST-AUTZ-CHAMPS` |
 | `plafond_requetes` (entier, 1 à 1 000 000 ; exige le débit) | la durée se déduit : plafond × délai entre requêtes + 5 min de démarrage | `DAST-AUTZ-CHAMPS` |
+
+**Jeton de service Cloudflare Access (0.3.4, TF-2649).** Quand l'application Access de la cible lit le jeton de service dans un seul
+en-tête (`read_service_tokens_from_header`), l'API de Cloudflare n'accepte que le nom `Authorization` : « must be one of [Authorization] »
+pour `X-<nom>`, mesuré le 13/11/2026 chez un produit (chaîne refusée 43387736198 ; avec `Authorization`, la chaîne 43388235024 passe
+13/13, rapporté par le produit, non rejoué ici). La documentation de Cloudflare relue le 12/11/2026 ne le dit pas. L'oracle ne sait pas
+qu'une cible est derrière Access : le mandat le déclare par `jeton_service_access: true`, et l'oracle refuse alors (`DAST-AUTZ-CHAMPS`)
+tout autre nom, comparé sans tenir compte de la casse (un nom d'en-tête HTTP n'en a pas). Il ne contrôle pas la forme de la valeur JSON :
+elle est décrite ici, non vérifiée.
 
 **Délai de ZAP (0.3.0, TF-2486).** `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, la
 durée de `plafond_requetes` requêtes (1000 par défaut) plus 5 min, jamais moins de 30 min ; sinon 30
