@@ -551,6 +551,28 @@ function runDast(args, env) {
     ok(r.verdict === "PASS", `voie --rapport : rien n'est émis, les options de balayage ne sont pas lues (obtenu ${r.verdict})`);
   }
 
+  // ── TF-2655 · un rapport ZAP à 0 site n'est pas un PASS : rien n'a été exploré ───────────────────
+  // Classe couverture-calculee-sur-enumeration-incomplete : le 13/11/2026, chez un produit, ZAP a balayé la racine d'une API
+  // (404, aucun lien), rendu un rapport à 0 site et 0 alerte en 60 s, et l'oracle a rendu PASS.
+  {
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-vide.json")]);
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-RIEN-EXPLORE") && r.synthese.zap.sites === 0,
+      `TF-2655 · ROUGE — rapport fourni à 0 site → SKIP DAST-RIEN-EXPLORE, plus un PASS (obtenu ${r.verdict}, ${(r.findings || []).map((x) => x.regle).join(",")})`);
+  }
+  {
+    const { r, lignes } = lancer(ZAP.baseline, AUTZ("autorisation-valide.json"), "passif", { WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-vide.json") });
+    ok(r.verdict === "SKIP" && aRegle(r, "DAST-RIEN-EXPLORE") && lignes.length === 1,
+      `TF-2655 · ROUGE — balayage dont ZAP rend un rapport à 0 site → SKIP DAST-RIEN-EXPLORE, pas un PASS (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    // Le plancher est « 0 site », pas « 0 alerte » : un site exploré sans aucune alerte est un rapport propre, et reste un PASS.
+    const f = path.join(dossier, "rapport-un-site-sans-alerte.json");
+    fs.writeFileSync(f, JSON.stringify({ "@programName": "ZAP", "@version": "2.17.0", site: [{ "@name": CIBLE_OK, "@host": "recette.exemple.tld", "@port": "443", "@ssl": "true", alerts: [] }] }));
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", f]);
+    ok(r.verdict === "PASS" && r.synthese.zap.sites === 1 && !aRegle(r, "DAST-RIEN-EXPLORE"),
+      `TF-2655 · VERT — un site exploré sans aucune alerte reste un PASS : le plancher est 0 site, pas 0 alerte (obtenu ${r.verdict}, ${r.synthese.zap && r.synthese.zap.sites} site)`);
+  }
+
   // ── TF-2485 · la forme prescrite sur la plateforme, jouée par un VRAI script qui enveloppe le ZAP simulé ──
   // Classe oracle-chemin-prescrit-inoperant-sur-sa-cible : le 12/11/2026, chez un produit, zap.bat ne partait
   // pas (Node v24.16.0 refuse un .bat sans shell : EINVAL) et l'oracle rendait « lancé… sortie vide ». Le

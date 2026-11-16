@@ -1,0 +1,7 @@
+{
+  "_fixture": "SYNTHÉTIQUE — sens ROUGE (TF-2655) : rapport ZAP au format JSON de zap-baseline.py à 0 site et 0 alerte, la forme que rend ZAP quand l'araignée part d'une racine sans lien (API, 404) et n'explore rien. Aucune donnée réelle.",
+  "@programName": "ZAP",
+  "@version": "2.17.0",
+  "@generated": "Mon, 16 Nov 2026 09:00:00",
+  "site": []
+}

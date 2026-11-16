@@ -86,7 +86,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.3.4";
+const VERSION = "0.4.0";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -95,6 +95,7 @@ const NON_JUGE = [
   "la sincérité de l'autorisation : l'oracle vérifie une déclaration écrite et traçable, jamais le consentement réel du propriétaire de la cible",
   "tout ce qu'une passe passive ne voit pas : logique métier, autorisation/IDOR, chaînes d'exploitation multi-étapes, 0-day — une absence d'alerte n'est pas une absence de vulnérabilité",
   "la couverture réelle du parcours : les endpoints non atteints par le spider ZAP ne sont pas jugés (une cible authentifiée non configurée est explorée en surface seulement)",
+  "la couverture d'une API : cet oracle ne passe pas la définition OpenAPI à ZAP (-openapiurl), l'araignée part de la racine ; un rapport à 0 site rend SKIP (DAST-RIEN-EXPLORE), mais un rapport à 1 site est jugé comme tel, et le nombre de requêtes n'est pas dans le rapport JSON de ZAP, donc aucun seuil de requêtes n'est appliqué",
   "l'exploitabilité et le tri des faux positifs : une alerte ZAP est un signal à qualifier par un humain, jamais un verdict d'exploitation",
   "la fraîcheur des règles d'un ZAP natif du poste (version des add-ons, base de règles) — non interrogée par cet oracle, qui ne coupe pas non plus sa mise à jour au lancement ; seule l'image Docker est épinglée et sans mise à jour (TF-2477)",
   "les règles bêta (pscanrulesBeta, ascanrulesBeta) sur la voie Docker : elles ne sont pas dans l'image épinglée et la mise à jour qui les installait est coupée, elles ne tournent donc pas",
@@ -310,6 +311,12 @@ function jugerRapport(chemin, provenance, contexte = {}) {
     }
   }
   synthese.zap = { provenance, rapport: chemin, sites: sites.length, alertes: compte };
+  // TF-2655 : un rapport à 0 site n'est pas un rapport propre, c'est un balayage qui n'a rien exploré (mesuré le 13/11/2026 chez un
+  // produit : API balayée depuis sa racine, 404 sans lien, ZAP termine en 60 s, 0 site, 0 alerte, et l'oracle rendait PASS).
+  if (sites.length === 0) {
+    add("info", "DAST-RIEN-EXPLORE", "rapport ZAP à 0 site : ZAP n'a rien exploré de la cible (racine sans lien, API sans page à suivre, ou cible injoignable), donc l'absence d'alerte ne dit rien de la cible. SKIP motivé — jamais un PASS sur 0 site balayé. Pour une API, l'araignée n'a pas de page d'où partir : il faut lui fournir la définition OpenAPI de l'API, que cet oracle ne passe pas encore à ZAP (cf. non_juge).", chemin);
+    sortir("SKIP", 2);
+  }
   signalerReglesHorsImage(alertes, contexte);
   for (const niveau of ["high", "medium", "low"]) {
     const seuil = seuils[niveau];

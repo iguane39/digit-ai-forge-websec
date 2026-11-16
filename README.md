@@ -260,6 +260,13 @@ qu'une cible est derrière Access : le mandat le déclare par `jeton_service_acc
 tout autre nom, comparé sans tenir compte de la casse (un nom d'en-tête HTTP n'en a pas). Il ne contrôle pas la forme de la valeur JSON :
 elle est décrite ici, non vérifiée.
 
+**Rapport à 0 site (0.4.0, TF-2655).** Un rapport ZAP dont `site[]` est vide, fourni (`--rapport`) ou produit par un balayage, rend
+`SKIP` `DAST-RIEN-EXPLORE` (exit 2) : ZAP n'a rien exploré, et l'absence d'alerte ne dit rien de la cible. Le fait : le 13/11/2026, chez
+un produit, ZAP a balayé la racine de l'API d'un service (404, aucun lien), terminé en 60 s sur un rapport à 0 site et 0 alerte, et
+l'oracle 0.3.1 rendait `PASS`. Le plancher est 0 site, pas 0 alerte : un site exploré sans alerte reste un `PASS`. Deux points de la
+décision ne sont pas tenus (`non_juge`) : le rapport JSON de ZAP ne porte pas le nombre de requêtes, donc aucun seuil de requêtes ne
+s'applique ; et la définition OpenAPI de l'API n'est pas passée à ZAP, l'araignée part toujours de la racine.
+
 **Délai de ZAP (0.3.0, TF-2486).** `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, la
 durée de `plafond_requetes` requêtes (1000 par défaut) plus 5 min, jamais moins de 30 min ; sinon 30
 min. Le délai est toujours borné par la fin de la fenêtre d'autorisation. À 10 requêtes par minute, il

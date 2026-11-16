@@ -5,6 +5,20 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-16 — `oracle-dast` 0.4.0 : un rapport ZAP à 0 site rend SKIP « rien exploré », plus PASS (TF-2655)
+
+- **Effet** : un rapport dont `site[]` est vide, fourni par `--rapport` ou produit par un balayage, rend `SKIP` `DAST-RIEN-EXPLORE` (exit 2) au
+  lieu de `PASS`. Mesuré le 16/11/2026 sur l'état de départ (0.3.3) : le rapport `{"site": []}` rendait `PASS`, exit 0, « aucune alerte au-delà
+  des seuils ». Le fait d'origine (13/11/2026, chez un produit, 0.3.1, rapporté) : ZAP avait balayé la racine de l'API d'un service (404, aucun
+  lien), terminé en 60 s sur 0 site et 0 alerte. Version mineure : un verdict `PASS` devient `SKIP` pour ce rapport. `wstg-cas.md` passe à
+  0.2.7 (`oracle_dast: 0.4.0`) : aucun cas ni mode changé.
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2655, et `fixtures/dast/rapport-zap-vide.json` : deux rouges (rapport fourni à 0 site, balayage
+  simulé dont ZAP rend ce rapport, 1 lancement) et un vert (un site exploré sans alerte reste `PASS`).
+- **Non fait** : (1) le seuil de requêtes de la décision : le rapport JSON de ZAP ne porte pas le nombre de requêtes, aucune source ne le
+  donne à l'oracle ; (2) le départ d'une API depuis sa définition OpenAPI (`-openapiurl`) : la forme de la commande de ZAP pour chacune des
+  trois voies (image Docker, `zap-baseline.py`, `zap.sh`) n'a pas été éprouvée contre un vrai ZAP, et le mandat n'a pas de champ pour cette
+  définition. Les deux sont dits dans `non_juge` et au README.
+
 ## 2026-11-16 — `oracle-dast` 0.3.4 : le jeton de service Cloudflare Access en un seul en-tête n'est accepté que sous « Authorization » (TF-2649)
 
 - **Effet** : le mandat peut déclarer `en_tete_acces.jeton_service_access: true` pour une cible derrière Cloudflare Access. L'oracle refuse alors
