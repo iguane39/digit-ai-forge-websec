@@ -1,0 +1,17 @@
+{
+  "openapi": "3.0.3",
+  "x-fixture": "SYNTHÉTIQUE — sens ROUGE de TF-2853 : deux chemins qui tombent sous les exclusions d'une autorisation (« /deconnexion », et « /admin/supprimer » par préfixe). Le garde-fou doit refuser tout le lancement en nommant chaque URL exclue, rien n'est émis.",
+  "info": { "title": "API de fixture", "version": "1.0.0" },
+  "servers": [{ "url": "https://recette.exemple.tld" }],
+  "paths": {
+    "/fiches": {
+      "get": { "responses": { "200": { "description": "les fiches" } } }
+    },
+    "/deconnexion": {
+      "get": { "responses": { "200": { "description": "fin de session" } } }
+    },
+    "/admin/supprimer/tout": {
+      "get": { "responses": { "200": { "description": "suppression" } } }
+    }
+  }
+}

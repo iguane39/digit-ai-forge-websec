@@ -1,0 +1,14 @@
+{
+  "openapi": "3.0.3",
+  "x-fixture": "SYNTHÉTIQUE — sens ROUGE de TF-2853 : un second serveur sur une origine que l'autorisation des fixtures ne nomme pas (autre.exemple.tld, domaine réservé RFC 2606). Le garde-fou doit refuser tout le lancement en le nommant, rien n'est émis.",
+  "info": { "title": "API de fixture", "version": "1.0.0" },
+  "servers": [
+    { "url": "https://recette.exemple.tld/rest/v1" },
+    { "url": "https://autre.exemple.tld/rest/v1" }
+  ],
+  "paths": {
+    "/fiches": {
+      "get": { "responses": { "200": { "description": "les fiches" } } }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "openapi": "3.0.3",
+  "x-fixture": "SYNTHÉTIQUE — TF-2853 : une API de fixture qui écrit (POST, PATCH, DELETE), sur l'origine autorisée. ROUGE en mode passif : l'import enverrait ces requêtes telles quelles, et le mode passif n'envoie que GET et HEAD. VERTE en mode actif, sous actif_autorise: true.",
+  "info": { "title": "API de fixture", "version": "1.0.0" },
+  "servers": [{ "url": "https://recette.exemple.tld/rest/v1" }],
+  "paths": {
+    "/fiches": {
+      "get": { "responses": { "200": { "description": "les fiches" } } },
+      "post": { "responses": { "201": { "description": "fiche créée" } } },
+      "patch": { "responses": { "204": { "description": "fiche modifiée" } } },
+      "delete": { "responses": { "204": { "description": "fiche supprimée" } } }
+    },
+    "/rpc/compter_fiches": {
+      "post": { "responses": { "200": { "description": "le compte des fiches" } } }
+    }
+  }
+}

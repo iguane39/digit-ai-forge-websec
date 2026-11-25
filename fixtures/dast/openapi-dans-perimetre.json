@@ -1,0 +1,24 @@
+{
+  "openapi": "3.0.3",
+  "x-fixture": "SYNTHÉTIQUE — sens VERT de TF-2853 : définition OpenAPI 3 d'une API fictive (exemple.tld, domaine réservé RFC 2606), servie sur l'origine autorisée des fixtures, opérations en lecture seule (GET, HEAD). Aucune donnée réelle.",
+  "info": { "title": "API de fixture", "version": "1.0.0" },
+  "servers": [{ "url": "https://recette.exemple.tld/rest/v1" }],
+  "paths": {
+    "/fiches": {
+      "get": {
+        "summary": "Lire les fiches",
+        "parameters": [{ "name": "select", "in": "query", "required": false, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "les fiches", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Fiches" } } } } }
+      },
+      "head": { "responses": { "200": { "description": "les en-têtes de la liste des fiches" } } }
+    },
+    "/rpc/compter_fiches": {
+      "get": { "responses": { "200": { "description": "le compte des fiches" } } }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Fiches": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "integer" }, "titre": { "type": "string" } } } }
+    }
+  }
+}

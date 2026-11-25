@@ -684,6 +684,273 @@ function runDast(args, env) {
   fs.rmSync(dossier, { recursive: true, force: true });
 }
 
+// ── TF-2853 · une API se balaie depuis sa définition OpenAPI locale, sous garde-fou de périmètre ───────────────
+// Classe couverture-calculee-sur-enumeration-incomplete (RP-74, lot de retours du 25/11/2026) : TF-2655 rend SKIP un rapport à 0 site,
+// mais une API dont la racine rend 404 sans lien n'avait aucun point de départ, et chaque balayage rendait ce SKIP. `--openapi-fichier`
+// donne sa définition à zap-api-scan.py ; le garde-fou la juge AVANT tout lancement : chaque serveur sur une origine de `cibles`, chaque
+// URL hors des `exclusions`, références internes seulement, GET et HEAD seuls en mode passif. Un ZAP SIMULÉ (zap-simule.mjs, copié sous le
+// nom zap-api-scan.mjs) et un Docker SIMULÉ (docker-simule.mjs) enregistrent la ligne de commande : aucun cas n'émet rien vers une cible.
+// Chaque refus est prouvé « rien de lancé » (trace vide). Chaque cas VERT juge ce que seule la voie OpenAPI produit (-f openapi, la
+// synthèse de la définition) : sur l'oracle 0.4.0, qui ignorait l'option, aucun ne passe.
+console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2853 : définition OpenAPI locale, garde-fou de périmètre)\n");
+{
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), "websec-dast-openapi-"));
+  const simule = (nom) => { const f = path.join(dossier, `${nom}.mjs`); fs.copyFileSync(AUTZ("zap-simule.mjs"), f); return f; };
+  const ZAP = { api: simule("zap-api-scan"), baseline: simule("zap-baseline"), complet: simule("zap-full-scan") };
+  const trace = path.join(dossier, "trace.jsonl");
+  const lireTrace = () => (fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+  // `definition` à null : aucune option --openapi-fichier ; `args` complète la ligne de commande.
+  const lancer = (definition, { zap = ZAP.api, autz = AUTZ("autorisation-valide.json"), mode = "passif", env = {}, args = [] } = {}) => {
+    fs.rmSync(trace, { force: true });
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", autz, "--mode", mode, ...(definition === null ? [] : ["--openapi-fichier", definition]), ...args], {
+      WEBSEC_DAST_ZAP: zap, WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-propre.json"), ...env,
+    });
+    return { r, lignes: lireTrace() };
+  };
+  const ecrire = (nom, contenu) => { const f = path.join(dossier, nom); fs.writeFileSync(f, typeof contenu === "string" ? contenu : JSON.stringify(contenu, null, 2)); return f; };
+  const lireFixture = (nom) => JSON.parse(fs.readFileSync(AUTZ(nom), "utf8"));
+  const variante = (nom, modifier, depuis = "openapi-dans-perimetre.json") => { const d = lireFixture(depuis); modifier(d); return ecrire(nom, d); };
+  const autorisation = (nom, ajout) => ecrire(nom, { ...lireFixture("autorisation-valide.json"), ...ajout });
+  const msgs = (r) => (r.findings || []).map((f) => f.msg).join(" ");
+  const regles = (r) => (r.findings || []).map((f) => f.regle).join(",");
+  const argv = (lignes) => (lignes[0] && lignes[0].argv) || [];
+  const apres = (a, option) => { const i = a.indexOf(option); return i >= 0 ? a[i + 1] : undefined; };
+  const refuse = (r, lignes, regle) => r.verdict === "FAIL" && aRegle(r, regle) && lignes.length === 0;
+  const DEF = AUTZ("openapi-dans-perimetre.json");
+  const AUTZ_EXCLUSIONS = autorisation("autorisation-exclusions.json", { exclusions: ["/deconnexion", "/admin/supprimer"] });
+
+  // ── sens VERT : la définition jugée part, une fois, par zap-api-scan, et c'est elle que ZAP reçoit ──
+  {
+    const { r, lignes } = lancer(DEF);
+    const a = argv(lignes);
+    const transmise = apres(a, "-t") || "";
+    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === "zap-api-scan.mjs" && apres(a, "-f") === "openapi" && a.includes("-S") && a.includes("-I") && Boolean(apres(a, "-J")),
+      `TF-2853 · VERT — mode passif, définition dans le périmètre : zap-api-scan, une fois, avec -f openapi et -S (mode sûr, aucune attaque active) (obtenu ${r.verdict}, ${lignes.length} lancement, « ${a.join(" ").slice(0, 160)} »)`);
+    ok(/definition-openapi\.json$/.test(transmise) && fs.existsSync(transmise) && JSON.stringify(JSON.parse(fs.readFileSync(transmise, "utf8"))) === JSON.stringify(lireFixture("openapi-dans-perimetre.json")),
+      `TF-2853 · VERT — ZAP reçoit la définition jugée, copiée dans le dossier de travail de l'oracle (obtenu « ${transmise} »)`);
+    ok(apres(a, "-f") === "openapi" && apres(a, "-z") === "-config 'spider.processform=false' -config 'spider.postform=false'" && !a.includes("-O"),
+      `TF-2853 · VERT — en passif, la voie OpenAPI garde dans -z les deux réglages qui coupent les formulaires, et -O n'est pas passé : ZAP part des serveurs jugés (obtenu « ${apres(a, "-z")} »)`);
+    const o = r.synthese && r.synthese.openapi;
+    ok(r.synthese?.balayage?.forme === "api" && o && o.operations === 3 && JSON.stringify(o.origines) === JSON.stringify(["https://recette.exemple.tld"]) && o.methodes.GET === 2 && o.methodes.HEAD === 1
+      && /GET et HEAD/.test(r.synthese.balayage.openapi?.requetes || ""),
+      `TF-2853 · VERT — le verdict consigne la forme api, les 3 opérations, leurs méthodes et l'origine balayée (obtenu ${JSON.stringify(o)})`);
+  }
+  {
+    const { r, lignes } = lancer(DEF, { autz: AUTZ("autorisation-actif.json"), mode: "actif" });
+    const a = argv(lignes);
+    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === "zap-api-scan.mjs" && apres(a, "-f") === "openapi" && !a.includes("-S") && !a.includes("-z"),
+      `TF-2853 · VERT — mode actif autorisé : zap-api-scan sans -S, son attaque active a lieu (obtenu ${r.verdict}, « ${a.join(" ").slice(0, 160)} »)`);
+  }
+  {
+    const yaml = AUTZ("openapi-dans-perimetre.yaml");
+    const { r, lignes } = lancer(yaml);
+    const transmise = apres(argv(lignes), "-t") || "";
+    ok(r.verdict === "PASS" && lignes.length === 1 && /definition-openapi\.yaml$/.test(transmise) && fs.existsSync(transmise)
+      && fs.readFileSync(transmise, "utf8") === fs.readFileSync(yaml, "utf8").replace(/^﻿/, "")
+      && r.synthese?.openapi?.version === "2.0" && r.synthese.openapi.format === "yaml" && r.synthese.openapi.operations === 2,
+      `TF-2853 · VERT — Swagger 2.0 en YAML (host, basePath, schemes) : jugé, puis transmis tel quel à ZAP (obtenu ${r.verdict}, ${JSON.stringify(r.synthese?.openapi)})`);
+  }
+  {
+    const deux = autorisation("autorisation-deux-cibles.json", { cibles: [CIBLE_OK, "https://autre.exemple.tld"], exclusions: ["/deconnexion"] });
+    const { r, lignes } = lancer(variante("deux-origines.json", (d) => { d.servers.push({ url: "https://autre.exemple.tld/rest/v1" }); }), { autz: deux });
+    const z = apres(argv(lignes), "-z") || "";
+    ok(r.verdict === "PASS" && lignes.length === 1 && JSON.stringify(r.synthese?.openapi?.origines) === JSON.stringify(["https://recette.exemple.tld", "https://autre.exemple.tld"])
+      && z.includes("globalexcludeurl.url_list.url(0).regex=^https://recette\\.exemple\\.tld/deconnexion.*") && z.includes("globalexcludeurl.url_list.url(1).regex=^https://autre\\.exemple\\.tld/deconnexion.*"),
+      `TF-2853 · VERT — deux serveurs, chacun sur une origine de cibles : admis, et ZAP reçoit l'exclusion du mandat sur chaque origine (obtenu ${r.verdict}, « ${z.slice(0, 220)} »)`);
+  }
+
+  // ── sens ROUGE : un serveur ou un chemin hors périmètre refuse TOUT le lancement, en le nommant ; rien n'est émis ──
+  {
+    const { r, lignes } = lancer(AUTZ("openapi-hors-perimetre.json"));
+    ok(refuse(r, lignes, "DAST-OPENAPI-HORS-PERIMETRE") && msgs(r).includes("https://autre.exemple.tld") && !msgs(r).includes("« https://recette.exemple.tld/rest/v1 »"),
+      `TF-2853 · ROUGE — un serveur sur une origine hors des cibles (autre.exemple.tld) refuse tout, nommé, rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement, ${regles(r)})`);
+  }
+  {
+    const { r, lignes } = lancer(AUTZ("openapi-chemin-exclu.json"), { autz: AUTZ_EXCLUSIONS });
+    const m = msgs(r);
+    ok(refuse(r, lignes, "DAST-OPENAPI-HORS-PERIMETRE") && m.includes("https://recette.exemple.tld/deconnexion") && m.includes("https://recette.exemple.tld/admin/supprimer/tout") && !m.includes("https://recette.exemple.tld/fiches"),
+      `TF-2853 · ROUGE — deux chemins sous les exclusions (/deconnexion, et /admin/supprimer par préfixe) : chacun nommé, tout refusé, rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement, ${regles(r)})`);
+    // le remède que le message propose : retirer les chemins exclus ; ZAP reçoit toujours les exclusions du mandat
+    const remede = variante("sans-exclus.json", (d) => { delete d.paths["/deconnexion"]; delete d.paths["/admin/supprimer/tout"]; }, "openapi-chemin-exclu.json");
+    const v = lancer(remede, { autz: AUTZ_EXCLUSIONS });
+    ok(v.r.verdict === "PASS" && v.lignes.length === 1 && apres(argv(v.lignes), "-f") === "openapi" && (apres(argv(v.lignes), "-z") || "").includes("globalexcludeurl.url_list.url(0).regex=^https://recette\\.exemple\\.tld/deconnexion.*"),
+      `TF-2853 · VERT — le remède joué : sans les chemins exclus, le balayage part, et ZAP reçoit toujours les exclusions du mandat (obtenu ${v.r.verdict}, ${v.lignes.length} lancement)`);
+  }
+  {
+    const ecriture = AUTZ("openapi-ecriture.json");
+    const { r, lignes } = lancer(ecriture);
+    const m = msgs(r);
+    ok(refuse(r, lignes, "DAST-OPENAPI-METHODE")
+      && ["POST https://recette.exemple.tld/rest/v1/fiches", "PATCH https://recette.exemple.tld/rest/v1/fiches", "DELETE https://recette.exemple.tld/rest/v1/fiches", "POST https://recette.exemple.tld/rest/v1/rpc/compter_fiches"].every((x) => m.includes(x))
+      && !m.includes("GET https://"),
+      `TF-2853 · ROUGE — mode passif et opérations qui écrivent : chacune nommée (POST, PATCH, DELETE), tout refusé, rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement, ${regles(r)})`);
+    const actif = lancer(ecriture, { autz: AUTZ("autorisation-actif.json"), mode: "actif" });
+    ok(actif.r.verdict === "PASS" && actif.lignes.length === 1 && apres(argv(actif.lignes), "-f") === "openapi" && !argv(actif.lignes).includes("-S") && actif.r.synthese?.openapi?.methodes?.DELETE === 1,
+      `TF-2853 · VERT — le remède joué : la même définition en mode actif, sous actif_autorise: true, part (obtenu ${actif.r.verdict}, ${actif.lignes.length} lancement)`);
+    const lecture = variante("lecture.json", (d) => {
+      for (const p of Object.values(d.paths)) for (const k of Object.keys(p)) if (k !== "get") delete p[k];
+      for (const [k, p] of Object.entries(d.paths)) if (!Object.keys(p).length) delete d.paths[k];
+    }, "openapi-ecriture.json");
+    const passif = lancer(lecture);
+    ok(passif.r.verdict === "PASS" && passif.lignes.length === 1 && argv(passif.lignes).includes("-S") && passif.r.synthese?.openapi?.operations === 1,
+      `TF-2853 · VERT — l'autre remède joué : la définition réduite à ses lectures (GET) part en mode passif (obtenu ${passif.r.verdict}, ${passif.lignes.length} lancement)`);
+    const sansAutz = lancer(ecriture, { mode: "actif" });
+    ok(sansAutz.r.verdict === "FAIL" && aRegle(sansAutz.r, "DAST-AUTZ-MODE") && sansAutz.lignes.length === 0,
+      `TF-2853 · garde inchangée — le mode actif sans actif_autorise reste refusé avec une définition (DAST-AUTZ-MODE), rien de lancé (obtenu ${sansAutz.r.verdict})`);
+  }
+  // fichier absent, illisible, ou qui n'est pas une définition : refus net
+  for (const [libelle, chemin, motif] of [
+    ["fichier absent", path.join(dossier, "absente.json"), /introuvable/],
+    ["un dossier au lieu d'un fichier", dossier, /illisible/],
+    ["JSON invalide", ecrire("invalide.json", "{ \"openapi\": \"3.0.3\", "), /JSON invalide/],
+    ["YAML à ancre, que le lecteur de l'oracle refuse", ecrire("ancre.yaml", "swagger: \"2.0\"\nhost: &h recette.exemple.tld\nschemes: [https]\npaths:\n  /fiches:\n    get: {}\n"), /ancre/],
+    ["version non prise en charge (Swagger 1.2)", ecrire("v12.json", { swaggerVersion: "1.2", apis: [] }), /version non prise en charge/],
+    ["définition sans chemin", variante("sans-chemin.json", (d) => { d.paths = {}; }), /sans chemin/],
+    ["méthode écrite en majuscules", variante("majuscules.json", (d) => { d.paths["/fiches"].POST = { responses: {} }; }), /clé « POST » inattendue/],
+  ]) {
+    const { r, lignes } = lancer(chemin);
+    ok(refuse(r, lignes, "DAST-OPENAPI-ILLISIBLE") && motif.test(msgs(r)),
+      `TF-2853 · ROUGE — ${libelle} → FAIL DAST-OPENAPI-ILLISIBLE qui le dit, rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement, « ${msgs(r).slice(0, 140)} »)`);
+  }
+  {
+    fs.rmSync(trace, { force: true });
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--openapi-fichier"], { WEBSEC_DAST_ZAP: ZAP.api, WEBSEC_DAST_SIMULE_TRACE: trace });
+    ok(refuse(r, lireTrace(), "DAST-OPENAPI-ILLISIBLE") && /non désignée/.test(msgs(r)), `TF-2853 · ROUGE — --openapi-fichier sans chemin → refus net, rien de lancé (obtenu ${r.verdict}, ${regles(r)})`);
+  }
+  {
+    fs.rmSync(trace, { force: true });
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-propre.json"), "--openapi-fichier", DEF], { WEBSEC_DAST_ZAP: ZAP.api, WEBSEC_DAST_SIMULE_TRACE: trace });
+    ok(r.verdict === "FAIL" && aRegle(r, "DAST-OPENAPI-USAGE") && lireTrace().length === 0, `TF-2853 · ROUGE — --openapi-fichier avec --rapport : les deux s'excluent, refus net (obtenu ${r.verdict}, ${regles(r)})`);
+  }
+  // serveurs, chemins et références que le garde-fou ne peut pas rattacher au périmètre
+  const SWAGGER = { swagger: "2.0", info: { title: "API de fixture", version: "1.0.0" }, host: "recette.exemple.tld", basePath: "/rest/v1", schemes: ["https"], paths: { "/fiches": { get: { responses: { 200: { description: "les fiches" } } } } } };
+  const swagger = (nom, modifier) => { const d = JSON.parse(JSON.stringify(SWAGGER)); modifier(d); return ecrire(nom, d); };
+  {
+    const { r, lignes } = lancer(swagger("swagger-vert.json", () => {}));
+    ok(r.verdict === "PASS" && lignes.length === 1 && r.synthese?.openapi?.version === "2.0" && JSON.stringify(r.synthese.openapi.serveurs) === JSON.stringify(["https://recette.exemple.tld/rest/v1"]),
+      `TF-2853 · VERT — Swagger 2.0 en JSON : le serveur se lit de host, basePath et schemes (obtenu ${r.verdict}, ${JSON.stringify(r.synthese?.openapi?.serveurs)})`);
+  }
+  for (const [libelle, fabriquer, motif] of [
+    ["serveur relatif", () => variante("rouge.json", (d) => { d.servers = [{ url: "/rest/v1" }]; }), /« \/rest\/v1 » : URL relative/],
+    ["aucun serveur déclaré", () => variante("rouge.json", (d) => { delete d.servers; }), /aucun serveur/],
+    ["serveur à variables", () => variante("rouge.json", (d) => { d.servers = [{ url: "https://{hote}/rest/v1", variables: { hote: { default: "recette.exemple.tld" } } }]; }), /variables/],
+    ["serveur avec un identifiant dans l'autorité", () => variante("rouge.json", (d) => { d.servers = [{ url: "https://jeton@recette.exemple.tld/rest/v1" }]; }), /autorité/],
+    ["serveur avec « \\ » dans l'autorité", () => variante("rouge.json", (d) => { d.servers = [{ url: "https://recette.exemple.tld\\@autre.exemple.tld/rest/v1" }]; }), /autorité/],
+    ["serveur d'un chemin hors des cibles", () => variante("rouge.json", (d) => { d.paths["/fiches"].servers = [{ url: "https://autre.exemple.tld/v2" }]; }), /« https:\/\/autre\.exemple\.tld\/v2 »/],
+    ["serveur d'une opération hors des cibles", () => variante("rouge.json", (d) => { d.paths["/rpc/compter_fiches"].get.servers = [{ url: "http://recette.exemple.tld/rest/v1" }]; }), /« http:\/\/recette\.exemple\.tld »/],
+    ["chemin à segment « .. »", () => variante("rouge.json", (d) => { d.paths["/fiches/../deconnexion"] = { get: { responses: {} } }; }), /segment « \. » ou « \.\. »/],
+    ["chemin qui commence par « // »", () => variante("rouge.json", (d) => { d.paths["//autre.exemple.tld/x"] = { get: { responses: {} } }; }), /porte « \/\/ »/],
+    ["chemin encodé (%2e)", () => variante("rouge.json", (d) => { d.paths["/%2e%2e/deconnexion"] = { get: { responses: {} } }; }), /« % »/],
+    ["référence externe par URL", () => variante("rouge.json", (d) => { d.paths["/fiches"].get.responses["200"].content["application/json"].schema = { $ref: "https://autre.exemple.tld/schemas.json#/Fiches" }; }), /référence « https:\/\/autre\.exemple\.tld\/schemas\.json#\/Fiches »/],
+    ["référence externe par fichier", () => variante("rouge.json", (d) => { d.components.schemas.Fiches.items = { $ref: "./schemas.yaml#/Fiche" }; }), /référence « \.\/schemas\.yaml#\/Fiche »/],
+    ["élément de chemin par référence", () => variante("rouge.json", (d) => { d.paths["/autres"] = { $ref: "#/components/pathItems/Autres" }; }), /par référence/],
+    ["rappels (callbacks)", () => variante("rouge.json", (d) => { d.paths["/fiches"].get.callbacks = { suivi: {} }; }), /rappels/],
+    ["webhooks", () => variante("rouge.json", (d) => { d.webhooks = { suivi: { post: { responses: {} } } }; }), /webhooks/],
+    ["Swagger 2.0 en http, origine non autorisée", () => swagger("rouge.json", (d) => { d.schemes = ["http"]; }), /« http:\/\/recette\.exemple\.tld »/],
+    ["Swagger 2.0 sur un autre hôte", () => swagger("rouge.json", (d) => { d.host = "autre.exemple.tld"; }), /« https:\/\/autre\.exemple\.tld »/],
+    ["Swagger 2.0 sans host", () => swagger("rouge.json", (d) => { delete d.host; }), /sans « host »/],
+    ["Swagger 2.0 sans schemes", () => swagger("rouge.json", (d) => { delete d.schemes; }), /« schemes »/],
+    ["Swagger 2.0, schemes d'une opération hors des cibles", () => swagger("rouge.json", (d) => { d.paths["/fiches"].get.schemes = ["http"]; }), /« http:\/\/recette\.exemple\.tld »/],
+  ]) {
+    const { r, lignes } = lancer(fabriquer());
+    ok(refuse(r, lignes, "DAST-OPENAPI-HORS-PERIMETRE") && motif.test(msgs(r)),
+      `TF-2853 · ROUGE — ${libelle} → FAIL DAST-OPENAPI-HORS-PERIMETRE qui le nomme, rien de lancé (obtenu ${r.verdict}, ${lignes.length} lancement, « ${msgs(r).slice(0, 160)} »)`);
+  }
+  {
+    const variable = variante("variable.json", (d) => { d.paths["/fiches/{id}"] = { get: { parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { 200: { description: "une fiche" } } } }; });
+    const sans = lancer(variable);
+    ok(sans.r.verdict === "PASS" && sans.lignes.length === 1 && sans.r.synthese?.openapi?.operations === 4,
+      `TF-2853 · VERT — un chemin à segment variable ({id}) est admis quand le mandat ne déclare aucune exclusion : l'origine est fixée par le serveur (obtenu ${sans.r.verdict})`);
+    const avec = lancer(variable, { autz: AUTZ_EXCLUSIONS });
+    ok(refuse(avec.r, avec.lignes, "DAST-OPENAPI-HORS-PERIMETRE") && /segment variable/.test(msgs(avec.r)) && msgs(avec.r).includes("https://recette.exemple.tld/rest/v1/fiches/{id}"),
+      `TF-2853 · ROUGE — le même chemin sous un mandat qui déclare des exclusions : refusé, la valeur de {id} n'est pas connue du garde-fou (obtenu ${avec.r.verdict}, ${avec.lignes.length} lancement)`);
+  }
+  // ── formes de ZAP : une définition ne se lit que par zap-api-scan, et zap-api-scan ne part que d'une définition ──
+  {
+    const base = lancer(DEF, { zap: ZAP.baseline });
+    ok(base.r.verdict === "SKIP" && aRegle(base.r, "DAST-API-IMPOSSIBLE") && base.lignes.length === 0,
+      `TF-2853 · ROUGE — définition fournie et ZAP baseline seul : SKIP DAST-API-IMPOSSIBLE, il partirait de la racine, rien de lancé (obtenu ${base.r.verdict}, ${base.lignes.length} lancement)`);
+    const complet = lancer(DEF, { zap: ZAP.complet, autz: AUTZ("autorisation-actif.json"), mode: "actif" });
+    ok(complet.r.verdict === "SKIP" && aRegle(complet.r, "DAST-API-IMPOSSIBLE") && complet.lignes.length === 0,
+      `TF-2853 · ROUGE — définition fournie et zap-full-scan en actif : SKIP DAST-API-IMPOSSIBLE, rien de lancé (obtenu ${complet.r.verdict}, ${complet.lignes.length} lancement)`);
+    const sansDef = lancer(null);
+    ok(sansDef.r.verdict === "SKIP" && aRegle(sansDef.r, "DAST-API-IMPOSSIBLE") && sansDef.lignes.length === 0 && /--openapi-fichier/.test(msgs(sansDef.r)),
+      `TF-2853 · ROUGE — zap-api-scan sans définition : SKIP qui dit --openapi-fichier, rien de lancé (obtenu ${sansDef.r.verdict}, ${sansDef.lignes.length} lancement)`);
+  }
+  // ── voie Docker : l'image épinglée lance zap-api-scan.py sur la définition du dossier monté ──
+  const zapApiAuPath = spawnSync(process.platform === "win32" ? "where" : "sh", process.platform === "win32" ? ["zap-api-scan.py"] : ["-c", "command -v zap-api-scan.py"], { encoding: "utf8" }).status === 0;
+  if (zapApiAuPath) skipNote("TF-2853 · zap-api-scan.py figure dans le PATH de ce poste : la voie Docker simulée ne peut pas être isolée, ses cas ne sont pas joués");
+  else {
+    const dockerSimule = path.join(dossier, "docker-simule.mjs");
+    fs.copyFileSync(AUTZ("docker-simule.mjs"), dockerSimule);
+    const IMAGE = (fs.readFileSync(ORACLE_DAST, "utf8").match(/const IMAGE_DEFAUT = "([^"]+)"/) || [])[1];
+    const parDocker = (images, mode, autz) => {
+      fs.rmSync(trace, { force: true });
+      const r = runDast(["--cible", CIBLE_OK, "--autorisation", autz, "--mode", mode, "--openapi-fichier", DEF], {
+        WEBSEC_DAST_ZAP: "", WEBSEC_DAST_IMAGE: "", WEBSEC_DAST_DOCKER: dockerSimule, WEBSEC_DAST_SIMULE_IMAGES: images.join(","),
+        WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-propre.json"),
+      });
+      return { r, run: lireTrace().filter((l) => l.argv[0] === "run") };
+    };
+    {
+      const { r, run } = parDocker([IMAGE], "passif", AUTZ("autorisation-valide.json"));
+      const a = (run[0] && run[0].argv) || [];
+      const i = a.indexOf(IMAGE);
+      const montage = (apres(a, "-v") || "").replace(/:\/zap\/wrk(:\w+)?$/, "");
+      ok(r.verdict === "PASS" && run.length === 1 && i > 0 && a[i + 1] === "zap-api-scan.py" && apres(a, "-t") === "definition-openapi.json" && apres(a, "-f") === "openapi"
+        && apres(a, "-J") === "zap-rapport.json" && a.includes("-S") && /^-silent /.test(apres(a, "-z") || "") && !/addon(update|install)/i.test(a.join(" ")),
+        `TF-2853 · VERT — voie Docker en passif : l'image épinglée lance zap-api-scan.py sur la définition du dossier monté, -f openapi, -S, -silent, aucune mise à jour de module (obtenu ${r.verdict}, « ${a.slice(Math.max(i, 0)).join(" ").slice(0, 200)} »)`);
+      ok(Boolean(montage) && fs.existsSync(path.join(montage, "definition-openapi.json"))
+        && JSON.stringify(JSON.parse(fs.readFileSync(path.join(montage, "definition-openapi.json"), "utf8"))) === JSON.stringify(lireFixture("openapi-dans-perimetre.json")),
+        `TF-2853 · VERT — le dossier monté sur /zap/wrk porte la définition jugée (obtenu « ${montage} »)`);
+      ok(r.synthese?.balayage?.forme === "api" && JSON.stringify(r.synthese.balayage.regles_beta?.modules) === JSON.stringify(["pscanrulesBeta"]) && r.synthese.balayage.regles_beta.jouees === false,
+        `TF-2853 · VERT — zap-api-scan.py n'installait que pscanrulesBeta : c'est le seul module bêta dit non joué (obtenu ${r.synthese?.balayage?.forme}, ${JSON.stringify(r.synthese?.balayage?.regles_beta?.modules)})`);
+    }
+    {
+      const { r, run } = parDocker([IMAGE], "actif", AUTZ("autorisation-actif.json"));
+      const a = (run[0] && run[0].argv) || [];
+      ok(r.verdict === "PASS" && run.length === 1 && a.includes("zap-api-scan.py") && apres(a, "-f") === "openapi" && !a.includes("-S") && JSON.stringify(r.synthese?.balayage?.regles_beta?.modules) === JSON.stringify(["pscanrulesBeta"]),
+        `TF-2853 · VERT — voie Docker en actif : zap-api-scan.py sans -S (obtenu ${r.verdict}, ${run.length} lancement)`);
+    }
+    {
+      const { r, run } = parDocker([], "passif", AUTZ("autorisation-valide.json"));
+      ok(r.verdict === "SKIP" && aRegle(r, "DAST-SKIP") && run.length === 0 && /zap-api-scan\.py absent du PATH/.test(msgs(r)),
+        `TF-2853 · ROUGE — ni zap-api-scan.py ni l'image : SKIP qui nomme zap-api-scan.py, rien de lancé (obtenu ${r.verdict}, « ${msgs(r).slice(0, 120)} »)`);
+    }
+  }
+  // ── les alertes des deux scripts que zap-api-scan.py charge depuis l'image ne sont pas « hors image » ──
+  // Mesuré le 25/11/2026 avec le vrai ZAP (voie OpenAPI, mode actif, cible de fixture locale) : « A Client Error response code was returned
+  // by the server » et « Unexpected Content-Type was returned » étaient signalées DAST-REGLE-HORS-IMAGE, avec une cause fausse.
+  {
+    const rapport = ecrire("rapport-scripts-api.json", { "@programName": "ZAP", "@version": "2.17.0", site: [{ "@name": CIBLE_OK, "@host": "recette.exemple.tld", "@port": "443", "@ssl": "true", alerts: [
+      { alert: "A Client Error response code was returned by the server", riskcode: "0", count: "2" },
+      { alert: "Unexpected Content-Type was returned", riskcode: "1", count: "1" },
+    ] }] });
+    const api = lancer(DEF, { env: { WEBSEC_DAST_SIMULE_RAPPORT: rapport } });
+    ok(api.r.verdict === "PASS" && !aRegle(api.r, "DAST-REGLE-HORS-IMAGE")
+      && JSON.stringify(api.r.synthese?.zap?.regles_image?.alertes_des_scripts_de_zap_api_scan) === JSON.stringify(["A Client Error response code was returned by the server", "Unexpected Content-Type was returned"]),
+      `TF-2853 · VERT — les alertes des scripts que zap-api-scan.py charge depuis l'image ne sont pas dites hors image, et le verdict les nomme (obtenu ${api.r.verdict}, ${regles(api.r)})`);
+    const base = lancer(null, { zap: ZAP.baseline, env: { WEBSEC_DAST_SIMULE_RAPPORT: rapport } });
+    ok(base.r.verdict === "PASS" && (base.r.findings || []).filter((f) => f.regle === "DAST-REGLE-HORS-IMAGE").length === 2,
+      `TF-2853 · TÉMOIN — les mêmes alertes venues de zap-baseline, qui ne charge pas ces scripts, restent signalées hors image (obtenu ${base.r.verdict}, ${regles(base.r)})`);
+  }
+  // ── le message d'un rapport à 0 site et non_juge disent la nouvelle voie ──
+  {
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-vide.json")]);
+    const f = (r.findings || []).find((x) => x.regle === "DAST-RIEN-EXPLORE");
+    ok(r.verdict === "SKIP" && Boolean(f) && /--openapi-fichier/.test(f.msg) && !/ne passe pas encore/.test(f.msg),
+      `TF-2853 · VERT — DAST-RIEN-EXPLORE dit la voie d'une API, --openapi-fichier (obtenu « ${f ? f.msg.slice(-220) : "aucun constat"} »)`);
+    const nj = (r.non_juge || []).join(" ");
+    ok(/--openapi-fichier/.test(nj) && /--graine/.test(nj) && !/ne passe pas la définition OpenAPI/.test(nj),
+      "TF-2853 · VERT — non_juge dit la voie --openapi-fichier, ce qu'elle ne couvre pas, et que la graine d'URL n'est pas prise en charge");
+    const { r: vide } = lancer(DEF, { env: { WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-vide.json") } });
+    const g = (vide.findings || []).find((x) => x.regle === "DAST-RIEN-EXPLORE");
+    ok(vide.verdict === "SKIP" && Boolean(g) && /définition OpenAPI fournie/.test(g.msg),
+      `TF-2853 · ROUGE — un balayage parti d'une définition et rendu à 0 site reste un SKIP, qui le dit (obtenu ${vide.verdict}, « ${g ? g.msg.slice(0, 120) : "aucun constat"} »)`);
+  }
+  fs.rmSync(dossier, { recursive: true, force: true });
+}
+
 // ── TF-2001 · oracle-workflows : durcissement des workflows GitHub Actions, WF-1..WF-5 ────────
 // Déterministe : lecture de fichiers YAML synthétiques, aucun réseau, rien d'exécuté. Chaque rouge
 // doit lever SA règle et aucune autre règle dure, pour prouver qu'elle échoue pour la bonne raison.

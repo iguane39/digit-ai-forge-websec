@@ -85,7 +85,7 @@ sécurité d'un `agent.def` ou d'un journal d'appels d'outils.
 | **Capturer une réponse HTTP réelle** | produire l'entrée de l'oracle d'exposition depuis une URL réelle | `node scripts/capturer.mjs <url> [<fichier> | --sortie <fichier>]` | **prouvé** (fetch natif, zéro dépendance) — ne juge rien, capture seulement ; la valeur des cookies posés (TF-2095) et les autres porteurs de jeton (paramètres de forme jeton de l'URL et de Location, Authorization, Proxy-Authorization, Cookie, TF-2107 ; Content-Location, Link, Refresh, X-Auth-Token, WWW-Authenticate et le jeton caché dans une URL imbriquée ou percent-encodée, TF-2133) sont caviardés à la capture, noms et attributs gardés ; dans toute URL portée par un en-tête (Location, Report-To, Link, Reporting-Endpoints, `report-uri`…), la valeur de chaque paramètre est remplacée par position, quel que soit son nom (TF-2306) : schéma, hôte, chemin et noms des paramètres restent lisibles ; l'adresse capturée elle-même (champ `url`) et celle du message d'échec suivent la même règle de position (TF-2390) ; tout en-tête dont le nom contient token, key, secret, auth, session ou password est masqué, et le même motif juge les noms de paramètre d'URL séparés par `&` ou `;` (TF-2394, D-197 (c)) |
 | **Juger un fichier `_headers`** | savoir, avant de déployer sur Cloudflare (Workers static assets ou Pages), si les en-têtes que déclare mon `_headers` tiennent les règles EX | `node oracles/oracle-exposition-statique.mjs <_headers \| dossier>` | **prouvé** — règles EX-1..EX-11 réutilisées sans copie, HD-1 et HD-2 sourcées sur developers.cloudflare.com (lu le 28/10/2026), 8 fixtures (`fixtures/exposition-statique/`) |
 | **Juger les dépendances vulnérables** | savoir si les dépendances d'un produit portent des CVE connues | `node oracles/oracle-sca.mjs <dossier-cible>` | **prouvé** — npm (`npm audit`) et pip (`pip-audit`, ou `uvx pip-audit` ; `requirements.txt`, `uv.lock`, `poetry.lock`) enveloppés, fixtures vertes/rouges par écosystème, SKIP rendu comme un manque nommé si l'outillage ou le réseau manque |
-| **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>]` | **partiellement prouvé** — garde-fou dual-use, lecture de rapport ZAP, modes passif et actif et options de balayage prouvés par les cas de self-test du volet DAST (`fixtures/dast/`, ZAP simulé) ; exécution avec le vrai ZAP (Docker) prouvée contre une cible de fixture locale par `scripts/preuve-dast-actif.mjs` ; applications riches et authentifiées, et ZAP natif, non prouvés |
+| **Juger un scan dynamique (DAST)** | savoir ce qu'OWASP ZAP relève sur une cible autorisée, en verdict à seuils | `node oracles/oracle-dast.mjs --cible <url> --autorisation <f.json> [--rapport <zap.json>] [--openapi-fichier <définition>]` | **partiellement prouvé** — garde-fou dual-use, lecture de rapport ZAP, modes passif et actif et options de balayage prouvés par les cas de self-test du volet DAST (`fixtures/dast/`, ZAP simulé) ; exécution avec le vrai ZAP (Docker) prouvée contre une cible de fixture locale par `scripts/preuve-dast-actif.mjs` ; voie OpenAPI (`zap-api-scan.py`) prouvée par ZAP et Docker simulés, et une fois avec le vrai ZAP contre une cible de fixture locale le 25/11/2026 (`CHANGELOG.md`, banc non versionné) ; applications riches et authentifiées, et ZAP natif, non prouvés |
 | **Juger les workflows GitHub Actions** | savoir si les workflows qui construisent et livrent mon produit donnent trop de droits, exécutent du code non épinglé ou injectable | `node oracles/oracle-workflows.mjs <dépôt \| dossier \| fichier.yml>` | **prouvé** — 5 règles WF-1..WF-5 sourcées sur docs.github.com (lu le 28/10/2026), 15 fichiers de fixtures (`fixtures/workflows/`), lecteur YAML natif identique à PyYAML sur 30 fichiers le 28/10/2026 |
 | **Rejouer toutes les preuves** | vérifier en un geste que rien n'a régressé | `node oracles/self-test.mjs` | **prouvé** — le compte se lit à la dernière ligne de la sortie (`Self-test forge-websec : n PASS, n FAIL, n SKIP motivé`), exit 0 s'il n'y a aucun FAIL ; il n'est pas recopié ici, il périmerait à chaque cas ajouté (TF-2490). Le volet SCA dépend de l'outillage réel du poste |
 
@@ -220,11 +220,14 @@ par `--seuils <f.json>`.
 |---|---|---|
 | `passif` (défaut) | `zap-baseline.py`, sinon l'image Docker épinglée (`zap-baseline.py`) | l'araignée et les règles passives, aucune règle d'attaque, **aucun formulaire soumis** (`spider.processform=false`, `spider.postform=false`, TF-2498 : l'araignée soumettait un POST, constaté le 13/11/2026) ; le formulaire reste lu, il n'est pas envoyé |
 | `actif` (`actif_autorise: true`) | `zap-full-scan.py`, `zap.sh` ou `zap.bat`, sinon l'image Docker épinglée (`zap-full-scan.py`) | l'araignée, puis l'attaque active de chaque URL trouvée ; les formulaires gardent le réglage par défaut de ZAP, seule l'option `exclusions` du mandat empêche l'envoi de l'un d'eux |
+| l'un ou l'autre, avec `--openapi-fichier` (0.5.0) | `zap-api-scan.py`, sinon l'image Docker épinglée (`zap-api-scan.py`) | une requête par opération de la définition, à sa méthode (GET et HEAD seulement en passif) ; en passif `-S` saute l'attaque active, en actif la politique API-Minimal du script attaque ensuite |
 
 Un mode ne se rabat jamais sur l'autre (TF-2444). Un ZAP qui ne sait que `baseline` ne rend pas un
 « actif » : `SKIP` `DAST-ACTIF-IMPOSSIBLE`. Un ZAP qui attaque (`zap-full-scan.py`, ou le balayage
 rapide de `zap.sh` / `zap.bat`, dont l'aide de ZAP 2.17.0 dit « The URL to attack ») ne sert pas un
-« passif » : `SKIP` `DAST-PASSIF-IMPOSSIBLE`. Dans les deux cas rien n'est lancé.
+« passif » : `SKIP` `DAST-PASSIF-IMPOSSIBLE`. Dans les deux cas rien n'est lancé. De même, une définition
+OpenAPI ne se lit que par `zap-api-scan.py`, et `zap-api-scan.py` ne part que d'une définition : sinon
+`SKIP` `DAST-API-IMPOSSIBLE`, rien n'est lancé.
 
 **L'image Docker est épinglée par empreinte** (TF-2477) : `ghcr.io/zaproxy/zaproxy@sha256:781a2bda…`, ZAP 2.17.0, et non
 l'étiquette mobile `stable`, dont les règles changeaient sans que la forge le sache. Une image absente du poste est un `SKIP`
@@ -263,9 +266,40 @@ elle est décrite ici, non vérifiée.
 **Rapport à 0 site (0.4.0, TF-2655).** Un rapport ZAP dont `site[]` est vide, fourni (`--rapport`) ou produit par un balayage, rend
 `SKIP` `DAST-RIEN-EXPLORE` (exit 2) : ZAP n'a rien exploré, et l'absence d'alerte ne dit rien de la cible. Le fait : le 13/11/2026, chez
 un produit, ZAP a balayé la racine de l'API d'un service (404, aucun lien), terminé en 60 s sur un rapport à 0 site et 0 alerte, et
-l'oracle 0.3.1 rendait `PASS`. Le plancher est 0 site, pas 0 alerte : un site exploré sans alerte reste un `PASS`. Deux points de la
-décision ne sont pas tenus (`non_juge`) : le rapport JSON de ZAP ne porte pas le nombre de requêtes, donc aucun seuil de requêtes ne
-s'applique ; et la définition OpenAPI de l'API n'est pas passée à ZAP, l'araignée part toujours de la racine.
+l'oracle 0.3.1 rendait `PASS`. Le plancher est 0 site, pas 0 alerte : un site exploré sans alerte reste un `PASS`. Le rapport JSON de
+ZAP ne porte pas le nombre de requêtes, donc aucun seuil de requêtes ne s'applique (`non_juge`). Pour une API, le message de
+`DAST-RIEN-EXPLORE` renvoie depuis la 0.5.0 à `--openapi-fichier` (paragraphe suivant).
+
+**Une API depuis sa définition OpenAPI (0.5.0, TF-2853).** Une API dont la racine rend 404 sans lien n'offre rien à l'araignée :
+chaque balayage rendait `SKIP` `DAST-RIEN-EXPLORE` (RP-74, 25/11/2026 : le lot de sondes actives d'un produit ne pouvait rien
+explorer). `--openapi-fichier <définition.json|.yaml>` donne à ZAP la définition de l'API, en fichier local que le produit écrit
+lui-même : OpenAPI 3.0 ou 3.1, ou Swagger 2.0, en JSON ou en YAML (le YAML passe par le lecteur natif d'`oracle-workflows`, qui
+refuse ancres, alias, étiquettes et clés en double). Les deux modes passent alors par `zap-api-scan.py` : `-t <définition> -f openapi`,
+plus `-S` en passif. Ces options ont été lues le 25/11/2026 dans le script de l'image épinglée (`docker run --network none`, sans
+balayage) : `-t` désigne un fichier relatif à `/zap/wrk`, que l'oracle monte ; `-S` (« safe mode ») saute l'attaque active ;
+`-silent` dans `-z` coupe `-addonupdate` et l'installation de `pscanrulesBeta`, le seul module bêta que ce script installait. L'aide
+de l'add-on openapi de l'image dit que l'import envoie les opérations de la définition avec des valeurs par défaut : une requête par
+opération, à sa méthode, vers les serveurs que la définition écrit. Le garde-fou juge donc la définition **avant tout lancement**,
+et un seul défaut refuse tout (`FAIL`, chaque défaut nommé, rien n'est émis) :
+
+| Contrôle | Refus |
+|---|---|
+| fichier absent, illisible, ni JSON ni YAML lisible, version autre que 3.0, 3.1 ou 2.0, aucun chemin, méthode écrite en majuscules | `DAST-OPENAPI-ILLISIBLE` |
+| chaque serveur (`servers` de la racine, d'un chemin ou d'une opération ; `host`, `basePath` et `schemes` en 2.0) est une URL absolue en http(s), sans variable, sans identifiant ni `@` ni `\` dans l'autorité, dont l'**origine** figure à l'identique dans `cibles` (la comparaison de `--cible`) | `DAST-OPENAPI-HORS-PERIMETRE` |
+| aucune URL serveur + chemin ne tombe sous une `exclusions` du mandat (la même expression que celle que ZAP reçoit, préfixe compris) ; un chemin à segment variable (`/fiches/{id}`) est refusé dès que le mandat déclare une exclusion, la valeur que ZAP lui donnera n'étant pas connue | `DAST-OPENAPI-HORS-PERIMETRE` |
+| chemins lus à la lettre : ni `//`, ni segment `.` ou `..`, ni `%`, `\`, `?`, `#` ou espace | `DAST-OPENAPI-HORS-PERIMETRE` |
+| toute référence `$ref` est interne (`#/…`) : une référence externe serait chargée depuis le disque ou le réseau ; un chemin décrit par référence, des rappels (`callbacks`) ou des `webhooks` sont refusés | `DAST-OPENAPI-HORS-PERIMETRE` |
+| en mode passif, seules GET et HEAD : l'import enverrait un POST, un PATCH ou un DELETE tel quel (TF-2498) | `DAST-OPENAPI-METHODE` |
+| `--openapi-fichier` avec `--rapport` : les deux s'excluent | `DAST-OPENAPI-USAGE` |
+
+Les autres gardes ne changent pas : `--cible` reste exigée et autorisée, le mode actif exige `actif_autorise: true`, et les options du
+mandat (en-tête, débit, exclusions, durée) valent comme ailleurs. Les exclusions sont passées à ZAP sur chaque origine que la définition
+vise ; l'en-tête d'accès reste borné à l'origine de `--cible`. Le texte jugé est celui que ZAP reçoit : l'oracle le copie dans son
+dossier de travail (un JSON réécrit tel qu'il l'a lu, un YAML tel quel). `-O` (remplacer le serveur de la définition) n'est pas
+passé : ZAP part des serveurs que le garde-fou a jugés. Une définition distante (URL) et une graine d'URL (`--graine`) ne sont pas
+prises en charge (`non_juge`). Avec `--mode actif`, l'attaque suit la politique API-Minimal de `zap-api-scan.py` (23 règles actives
+dans l'image, lues le 25/11/2026), pas celle de `zap-full-scan.py`. Hors d'un conteneur, `zap-api-scan.py` lance lui-même l'image
+`ghcr.io/zaproxy/zaproxy:weekly` (`docker pull`, lu dans le script de l'image) : seule la voie Docker de l'oracle lance l'image épinglée.
 
 **Délai de ZAP (0.3.0, TF-2486).** `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, la
 durée de `plafond_requetes` requêtes (1000 par défaut) plus 5 min, jamais moins de 30 min ; sinon 30
@@ -288,7 +322,8 @@ commande du processus ZAP le temps du balayage.
 
 ```
 node oracles/oracle-dast.mjs --cible https://recette.exemple.tld \
-     --autorisation autorisation.json [--rapport zap.json] [--seuils s.json] [--mode passif|actif]
+     --autorisation autorisation.json [--rapport zap.json] [--seuils s.json] [--mode passif|actif] \
+     [--openapi-fichier definition.json]
 ```
 
 Ce que cet oracle **ne juge pas** est déclaré dans son champ `non_juge` — au premier rang :
@@ -337,10 +372,11 @@ Exit `0` = PASS, `1` = FAIL, `2` = SKIP. `oracle-sca` et `oracle-dast` ajoutent 
 (fichiers lus et jugés, jobs, étapes, constats par règle) et `sources[]` (`url`, `lu_le`), et
 chacun de ses constats porte `source`. `oracle-exposition-statique` ajoute `sondes` (en-têtes
 calculés par sonde), `synthese` et `sources[]`. Pour `oracle-dast` : `FAIL` couvre aussi
-le **refus du garde-fou** (rien n'a été émis) et `SKIP` les cas où rien n'a pu être jugé
+le **refus du garde-fou** (rien n'a été émis), définition OpenAPI comprise, et `SKIP` les cas où rien n'a pu être jugé
 — aucune cible fournie, ZAP absent du poste, ou ZAP d'une forme que le mode refuse
-(`DAST-ACTIF-IMPOSSIBLE`, `DAST-PASSIF-IMPOSSIBLE`). La `synthese.balayage` dit le mode joué, la
-forme du ZAP, le débit, les exclusions et le nom de l'en-tête d'accès (jamais sa valeur).
+(`DAST-ACTIF-IMPOSSIBLE`, `DAST-PASSIF-IMPOSSIBLE`, `DAST-API-IMPOSSIBLE`). La `synthese.balayage` dit le mode joué, la
+forme du ZAP, le débit, les exclusions et le nom de l'en-tête d'accès (jamais sa valeur) ; avec une définition,
+`synthese.openapi` en donne le format, la version, les serveurs, les origines et les opérations par méthode.
 
 ## Référentiel `referentiels/asvs-l1.md`
 
@@ -499,7 +535,7 @@ oracles/
   oracle-exposition.mjs   juge une capture HTTP {url,status,headers} — 11 règles EX-1..EX-11 (exportées)
   oracle-exposition-statique.mjs  juge un fichier _headers de Cloudflare — règles EX réutilisées, HD-1, HD-2
   oracle-sca.mjs          enveloppe npm audit / pip-audit (ou uvx pip-audit ; uv.lock, poetry.lock) en verdict machine normalisé
-  oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils
+  oracle-dast.mjs         enveloppe OWASP ZAP — garde-fou dual-use fail-closed + seuils ; une API se balaie depuis sa définition OpenAPI (--openapi-fichier)
   oracle-workflows.mjs    juge les workflows GitHub Actions — 5 règles WF-1..WF-5, lecteur YAML natif
   self-test.mjs           rejeu intégral à double sens (277 contrôles le 13/11/2026)
 scripts/
@@ -528,7 +564,10 @@ fixtures/
                           desserrés, zap-simule.mjs (ZAP simulé du self-test), docker-simule.mjs (Docker
                           simulé : image présente ou non, ligne de commande enregistrée), deux rapports
                           à règle hors image ou à variante, cible-locale.mjs (la cible de fixture du banc réel
-                          du mode actif) et cible-passive.mjs (celle du banc du mode passif)
+                          du mode actif) et cible-passive.mjs (celle du banc du mode passif) ; cinq définitions
+                          OpenAPI synthétiques de la voie --openapi-fichier (TF-2853) : dans le périmètre en
+                          OpenAPI 3 (JSON) et en Swagger 2.0 (YAML), serveur hors des cibles, chemins exclus,
+                          opérations qui écrivent
   workflows/              workflows synthétiques : 2 verts, 9 rouges (une par règle au moins),
                           1 mineur, un dépôt fictif avec verrou actions.lock
 ```

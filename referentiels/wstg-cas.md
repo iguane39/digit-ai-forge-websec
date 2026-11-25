@@ -1,7 +1,7 @@
 ---
-version: 0.2.7
+version: 0.2.8
 challenge_date: 2026-08-14
-oracle_dast: 0.4.0
+oracle_dast: 0.5.0
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
@@ -9,6 +9,7 @@ sources:
   - "Noms des règles d'attaque active de ZAP 2.17.0 (modules ascanrules et domxss de l'image ghcr.io/zaproxy/zaproxy:stable), lus localement le 2026-11-12 dans leurs fichiers de messages, sans balayage ; alertes d'un balayage actif réel contre la cible de fixture locale du dépôt, même date — section « Ce que le mode actif d'oracle-dast couvre »"
   - "Alertes d'une passe passive réelle (ZAP 2.17.0, image épinglée) contre la cible de fixture passive du dépôt, 2026-11-13, par scripts/preuve-dast-passif.mjs — section « Ce que le mode passif d'oracle-dast couvre »"
   - "Règles de l'image ZAP 2.17.0 épinglée par empreinte (ghcr.io/zaproxy/zaproxy@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef, créée le 2026-08-07), lues le 2026-11-13 sans réseau par scripts/lire-regles-zap.mjs et écrites dans referentiels/zap-regles.json : add-ons chargés vérifiés par ZAP lui-même (-addonlist)"
+  - "Script zap-api-scan.py, aide de l'add-on openapi 57 et politique API-Minimal de la même image épinglée, lus le 2026-11-25 sans réseau (docker run --network none, sans balayage) — section « La voie OpenAPI d'oracle-dast »"
 ---
 
 # Référentiel — cas de test WSTG curés (méthode de test, sous-ensemble)
@@ -64,6 +65,11 @@ self-test compare chaque règle citée à la liste des règles de l'image.
 **Ajout du 14/11/2026 (0.2.4 et 0.2.5, TF-2498 et TF-2499).** Le mode passif ne soumet plus aucun formulaire (`oracle-dast` 0.3.2) : la
 section de ce mode le dit. Une section dit maintenant, cas par cas, ce que la voie Docker ne joue plus depuis `-silent`, les règles
 bêta de ZAP (`oracle-dast` 0.3.3, qui les consigne au verdict) ; `oracle_dast` du frontmatter suit la version de l'oracle (0.3.3, puis 0.3.4 le 16/11/2026 pour TF-2649, qui ne change ni mode ni cas : `wstg-cas.md` passe à 0.2.6 ; puis 0.4.0 pour TF-2655, où un rapport à 0 site rend `SKIP` : aucun cas n'est dit levé par un balayage qui n'a rien exploré, `wstg-cas.md` passe à 0.2.7).
+
+**Ajout du 25/11/2026 (0.2.8, TF-2853).** `oracle-dast` 0.5.0 balaie une API depuis sa définition OpenAPI locale
+(`--openapi-fichier`), par `zap-api-scan.py`. Aucun cas ni mode de la colonne « Outillage » ne change ; la section « La voie
+OpenAPI d'oracle-dast » dit ce que cette voie joue dans chaque mode, et ce qu'elle ne joue pas. `oracle_dast` du frontmatter suit la
+version 0.5.0.
 
 **Colonne « Outillage »** : `oracle-exposition` | `oracle-sca` | `oracle-dast` | `manuel` —
 jamais inventée. Un cas confié à `oracle-dast` nomme toujours le mode qui le lève, `passif` ou `actif` :
@@ -291,6 +297,26 @@ Les règles que chaque cas cite dans sa ligne du tableau d'origine sont toutes d
 (TF-2476) : l'image les charge. Ce que le tableau
 ci-dessus ne dit pas, c'est ce qu'un module bêta ajoutait en plus pour ce cas. Le self-test refuse cette section si elle omet un cas
 confié à `oracle-dast`, ou si le verdict renvoie à une section qui n'existe pas.
+
+## La voie OpenAPI d'oracle-dast
+
+Depuis la 0.5.0 (25/11/2026, TF-2853), `--openapi-fichier <définition>` fait partir ZAP de la définition OpenAPI d'une API au lieu de
+sa racine : une API dont la racine rend 404 sans lien n'offrait rien à l'araignée, et chaque balayage rendait `SKIP`. Le script est
+`zap-api-scan.py`, lu le 25/11/2026 dans l'image épinglée, sans réseau ni balayage. Il importe la définition, ce qui envoie une requête
+par opération, à sa méthode, avec des valeurs par défaut (aide de l'add-on openapi 57 de l'image). Il n'y a pas d'araignée : seules
+les opérations que la définition écrit sont demandées, et ce qu'elle omet n'est pas balayé.
+
+- **Mode passif** : `-S`, le mode sûr du script, saute l'attaque active ; les règles passives de l'image lisent les réponses de
+  l'import. Le garde-fou n'admet que GET et HEAD, pour que l'import n'envoie aucune requête qui agit. Les cas du tableau « Ce que le mode
+  passif d'oracle-dast couvre » valent sur ces réponses ; les deux qui demandent un formulaire HTML (SESS-05) ou un cookie posé par une
+  page (SESS-02) n'ont de prise que si l'API en renvoie.
+- **Mode actif** (sous `actif_autorise: true`) : l'import envoie toutes les méthodes de la définition, puis l'attaque suit la politique
+  API-Minimal du script, 23 règles actives dans l'image, et non la politique de `zap-full-scan.py` que décrit la section du mode actif.
+  Les cas marqués actifs ci-dessus ont été lus pour `zap-full-scan.py` : qu'API-Minimal les joue n'est pas établi ici, cas par cas.
+- **Garde-fou de la définition** : chaque serveur sur une origine de `cibles`, aucune URL sous une exclusion du mandat, références
+  internes seulement, refus net de tout le lancement au premier défaut. Le détail est au README, section `oracle-dast.mjs`.
+- **Règles bêta** : `zap-api-scan.py` n'installait que `pscanrulesBeta`, dans les deux modes ; `-silent` le coupe comme pour les deux
+  autres scripts, et le verdict ne nomme que ce module.
 
 ## Chapitres et cas NON curés
 

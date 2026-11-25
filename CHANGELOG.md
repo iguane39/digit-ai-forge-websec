@@ -5,6 +5,41 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-25 — `oracle-dast` 0.5.0 : une API se balaie depuis sa définition OpenAPI locale, sous garde-fou de périmètre (TF-2853)
+
+- **Effet** : `--openapi-fichier <définition.json|.yaml>` fait partir ZAP de la définition OpenAPI d'une API (3.0, 3.1 ou Swagger 2.0,
+  JSON ou YAML), par `zap-api-scan.py` : `-f openapi`, et `-S` en mode passif. C'est la moitié de TF-2655 que la 0.4.0 n'avait pas
+  faite (RP-74 du lot de retours du 25/11/2026, gravité bloquante) : une API dont la racine rend 404 sans lien n'avait aucun point de
+  départ, chaque balayage rendait `SKIP` `DAST-RIEN-EXPLORE`, et le lot de sondes actives d'un produit ne pouvait rien explorer. Le
+  message de `DAST-RIEN-EXPLORE` et `non_juge` disent la nouvelle voie. Version mineure : une option et une forme de ZAP (`api`)
+  nouvelles, aucun verdict existant changé.
+- **Lu avant de s'y fier** (25/11/2026, dans l'image épinglée, `docker run --network none`, sans balayage) : `zap-api-scan.py` lit
+  `-t` comme un fichier relatif à `/zap/wrk` ; `-S` (« safe mode ») saute l'attaque active ; `-O` remplace le serveur de la
+  définition, il n'est pas passé ; `-silent` dans `-z` coupe `-addonupdate` et l'installation de `pscanrulesBeta`, seul module bêta de
+  ce script ; hors d'un conteneur, le script lance lui-même `ghcr.io/zaproxy/zaproxy:weekly` par `docker pull`. L'aide de l'add-on
+  openapi 57 dit l'import synchrone, avec des valeurs par défaut. La politique API-Minimal de l'attaque active compte 23 règles actives.
+- **Garde-fou, avant tout lancement** : la définition est lue une fois et jugée, et un seul défaut refuse tout le lancement en le
+  nommant (`FAIL`, rien n'est émis). Chaque serveur doit avoir une origine de `cibles`, comparée comme `--cible`. Aucune URL serveur
+  + chemin ne doit tomber sous une `exclusions` : c'est l'expression que ZAP reçoit, désormais partagée par les deux. Les références
+  doivent être internes, les chemins lus à la lettre, et le mode passif n'admet que GET et HEAD (`DAST-OPENAPI-ILLISIBLE`,
+  `DAST-OPENAPI-HORS-PERIMETRE`, `DAST-OPENAPI-METHODE`, `DAST-OPENAPI-USAGE`). Un ZAP d'une autre forme, ou `zap-api-scan.py` sans
+  définition, rend `SKIP` `DAST-API-IMPOSSIBLE`. Le texte jugé est celui que ZAP reçoit. Les exclusions valent sur chaque origine
+  visée. Aucune garde existante n'est relâchée : `actif_autorise`, la fenêtre, la production et les options du mandat jouent comme avant.
+- **Corrigé en chemin** : `zap-api-scan.py` charge deux scripts de l'image dont les trois alertes ne sont la règle d'aucun add-on. Au
+  premier balayage réel du 25/11/2026, deux d'entre elles étaient dites `DAST-REGLE-HORS-IMAGE`, avec une cause fausse (« un module a
+  été chargé hors de l'image »). Elles ne le sont plus quand le balayage part d'une définition, et le verdict les nomme à part.
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2853, 59 contrôles sur les ZAP et Docker simulés et cinq fixtures
+  (`fixtures/dast/openapi-*`). Rejoué contre l'oracle 0.4.0 avec les mêmes fixtures, le bloc rend 57 FAIL et 2 PASS : les deux PASS
+  sont des témoins, la garde `DAST-AUTZ-MODE` inchangée et les alertes de `zap-baseline` toujours signalées hors image.
+- **Preuve réelle, hors self-test** (25/11/2026, script jetable hors du dépôt, non versionné) : le vrai ZAP de l'image épinglée,
+  contre `fixtures/dast/cible-passive.mjs` sur 127.0.0.1, définition de deux GET. En passif, 18 s : la cible a reçu 2 requêtes, GET
+  `/api/donnees` et GET `/api/profil`, rien d'autre. Le rapport porte 1 site, et le verdict est `FAIL` sur « Cross-Domain
+  Misconfiguration » (medium). En actif, témoin, 25 s : 63 requêtes GET sur 17 chemins, les sondes de la politique API-Minimal.
+- **Non fait** : la graine d'URL (`--graine`), parce que `zap-baseline.py` et `zap-full-scan.py` ne prennent qu'une URL de départ et
+  qu'une liste demanderait un crochet ou un plan d'automatisation non éprouvés ; une définition distante (URL). Les deux sont dits
+  dans `non_juge`. Le banc réel de la voie OpenAPI n'est pas versionné. `wstg-cas.md` passe à 0.2.8 (`oracle_dast: 0.5.0`) avec une
+  section « La voie OpenAPI d'oracle-dast » : aucun cas ni mode changé.
+
 ## 2026-11-16 — `oracle-dast` 0.4.0 : un rapport ZAP à 0 site rend SKIP « rien exploré », plus PASS (TF-2655)
 
 - **Effet** : un rapport dont `site[]` est vide, fourni par `--rapport` ou produit par un balayage, rend `SKIP` `DAST-RIEN-EXPLORE` (exit 2) au

@@ -1,0 +1,27 @@
+# SYNTHÉTIQUE — sens VERT de TF-2853 : la même API de fixture en Swagger 2.0 et en YAML (host, basePath et schemes au
+# lieu de servers). Domaine réservé RFC 2606 (exemple.tld), opérations en lecture seule (GET), aucune donnée réelle.
+swagger: "2.0"
+info:
+  title: API de fixture
+  version: "1.0.0"
+host: recette.exemple.tld
+basePath: /rest/v1
+schemes:
+  - https
+paths:
+  /fiches:
+    get:
+      summary: Lire les fiches
+      parameters:
+        - name: select
+          in: query
+          required: false
+          type: string
+      responses:
+        "200":
+          description: les fiches
+  /rpc/compter_fiches:
+    get:
+      responses:
+        "200":
+          description: le compte des fiches
