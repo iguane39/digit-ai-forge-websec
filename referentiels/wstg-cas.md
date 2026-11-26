@@ -1,7 +1,7 @@
 ---
-version: 0.2.8
+version: 0.2.9
 challenge_date: 2026-08-14
-oracle_dast: 0.5.0
+oracle_dast: 0.5.1
 sources:
   - "OWASP Web Security Testing Guide (WSTG) 4.2 — publié 2020-12, stable au 2026-08-14 (v5.0 non publiée à cette date), licence CC BY-SA 4.0 — https://github.com/OWASP/wstg"
   - "Sommaire des cas WSTG 4.2 (chapitres 4.1 à 4.12) — https://owasp.org/www-project-web-security-testing-guide/v42/"
@@ -70,6 +70,11 @@ bêta de ZAP (`oracle-dast` 0.3.3, qui les consigne au verdict) ; `oracle_dast` 
 (`--openapi-fichier`), par `zap-api-scan.py`. Aucun cas ni mode de la colonne « Outillage » ne change ; la section « La voie
 OpenAPI d'oracle-dast » dit ce que cette voie joue dans chaque mode, et ce qu'elle ne joue pas. `oracle_dast` du frontmatter suit la
 version 0.5.0.
+
+**Ajout du 26/11/2026 (0.2.9, TF-2884).** `oracle-dast` 0.5.1 dit au verdict (`DAST-IMAGE-MOBILE`) qu'un ZAP natif de forme
+`zap-baseline.py`, `zap-full-scan.py` ou `zap-api-scan.py` tire lui-même l'image `weekly` : les règles qui jugent alors la cible ne sont
+pas celles de `referentiels/zap-regles.json`. Aucun cas ni mode de la colonne « Outillage » ne change. `oracle_dast` du frontmatter
+suit la version 0.5.1.
 
 **Colonne « Outillage »** : `oracle-exposition` | `oracle-sca` | `oracle-dast` | `manuel` —
 jamais inventée. Un cas confié à `oracle-dast` nomme toujours le mode qui le lève, `passif` ou `actif` :

@@ -5,6 +5,27 @@ version de l'écosystème, posés par le pilot. Les unités versionnées ici son
 `VERSION`, champ `version` de leur sortie) et les référentiels (frontmatter `version`). Ce journal
 commence le 28/10/2026 ; l'historique antérieur se lit dans `git log`.
 
+## 2026-11-26 — `oracle-dast` 0.5.1 : un script ZAP natif qui tire lui-même l'image `weekly` n'est plus jugé en silence (TF-2884)
+
+- **Effet** : `zap-baseline.py`, `zap-full-scan.py` et `zap-api-scan.py`, lancés hors d'un conteneur (`WEBSEC_DAST_ZAP` ou `PATH`),
+  rendent maintenant `DAST-IMAGE-MOBILE` (info) au verdict, avec la cause et le remède « lancer par la voie Docker de l'oracle ». Avant, le
+  verdict ne disait rien : les règles qui jugeaient la cible venaient de l'étiquette mobile `ghcr.io/zaproxy/zaproxy:weekly`, tirée par le
+  script lui-même, ni épinglée ni lue par `referentiels/zap-regles.json`. Seule la voie API était dite, dans `non_juge`. Version de
+  correction : aucun verdict d'alerte, aucune garde ni aucune option ne change, un constat d'information s'ajoute.
+- **Lu avant de s'y fier** (26/11/2026, dans l'image épinglée, `docker run --network none`, sans balayage) : l'étiquette `weekly` est écrite
+  en dur à chaque appel de `start_docker_zap` (`zap-baseline.py` ligne 543, `zap-api-scan.py` ligne 382, `zap-full-scan.py` ligne 319,
+  `zap_common.py` ligne 335 pour le `docker pull`), et aucune option des trois scripts ne désigne une autre image. La voie préférée de la
+  consigne, passer l'image épinglée au script, n'existe donc pas : l'oracle émet le constat. `running_in_docker()` lit aussi
+  `IS_CONTAINERIZED=true`, mais ce détour lancerait `/zap/zap-x.sh` qui n'existe pas sur un poste : non retenu.
+- **Périmètre** : les trois formes `baseline`, `complet` et `api` d'un ZAP natif. `zap.sh` et `zap.bat` (forme `rapide`) ne passent par aucun
+  de ces scripts et n'ont pas de constat ; un script au nom inconnu n'est pas lu, `non_juge` le dit. La synthèse porte
+  `balayage.image_tiree_par_le_script` ; `balayage.image` reste réservée à la voie Docker de l'oracle. `non_juge` et le README
+  (paragraphe « Un script ZAP natif tire lui-même l'image `weekly` ») disent les trois scripts. `wstg-cas.md` passe à 0.2.9
+  (`oracle_dast: 0.5.1`) : aucun cas ni mode changé.
+- **Garde** : `oracles/self-test.mjs`, bloc TF-2884, sur les ZAP et Docker simulés : les trois scripts rendent le constat (rouge sur la
+  0.5.0), un rapport vulnérable reste `FAIL` avec le constat, et trois témoins restent sans constat (`zap.sh` / `zap.bat`, `--rapport`,
+  voie Docker de l'oracle en passif et en actif).
+
 ## 2026-11-25 — `oracle-dast` 0.5.0 : une API se balaie depuis sa définition OpenAPI locale, sous garde-fou de périmètre (TF-2853)
 
 - **Effet** : `--openapi-fichier <définition.json|.yaml>` fait partir ZAP de la définition OpenAPI d'une API (3.0, 3.1 ou Swagger 2.0,

@@ -239,7 +239,8 @@ règles que celles de l'image, et ce démarrage coûtait plusieurs minutes. Les 
 `referentiels/zap-regles.json` (lues sans réseau par `node scripts/lire-regles-zap.mjs --image <référence> --ecrire`, qui compare
 ses lectures aux add-ons que ZAP dit charger) ; une alerte dont le nom n'y figure pas est signalée (`DAST-REGLE-HORS-IMAGE`, info,
 jamais un changement de verdict). Un ZAP natif du poste n'est ni épinglé ni coupé de sa mise à jour : `synthese.balayage.maj_modules`
-le dit. Les règles bêta que `-silent` ne laisse plus s'installer (`pscanrulesBeta`, et `ascanrulesBeta` en mode actif) ne tournent
+le dit, et les trois scripts `zap-*.py` tirent en plus l'image `weekly` (`DAST-IMAGE-MOBILE`, paragraphe « Un script ZAP natif tire lui-même
+l'image `weekly` » plus bas). Les règles bêta que `-silent` ne laisse plus s'installer (`pscanrulesBeta`, et `ascanrulesBeta` en mode actif) ne tournent
 plus sur la voie Docker, et aucune n'est réactivée par le réseau : `synthese.balayage.regles_beta` le consigne au verdict (modules non
 joués, `liste_lue: false` puisque ces modules ne sont pas dans l'image, `indéterminé` pour un ZAP natif), et `referentiels/wstg-cas.md`
 le dit cas par cas (TF-2499). Changer d'image se décide : relire ses règles, puis changer la constante `IMAGE_DEFAUT` et la liste dans le même commit — le
@@ -298,8 +299,19 @@ vise ; l'en-tête d'accès reste borné à l'origine de `--cible`. Le texte jug�
 dossier de travail (un JSON réécrit tel qu'il l'a lu, un YAML tel quel). `-O` (remplacer le serveur de la définition) n'est pas
 passé : ZAP part des serveurs que le garde-fou a jugés. Une définition distante (URL) et une graine d'URL (`--graine`) ne sont pas
 prises en charge (`non_juge`). Avec `--mode actif`, l'attaque suit la politique API-Minimal de `zap-api-scan.py` (23 règles actives
-dans l'image, lues le 25/11/2026), pas celle de `zap-full-scan.py`. Hors d'un conteneur, `zap-api-scan.py` lance lui-même l'image
-`ghcr.io/zaproxy/zaproxy:weekly` (`docker pull`, lu dans le script de l'image) : seule la voie Docker de l'oracle lance l'image épinglée.
+dans l'image, lues le 25/11/2026), pas celle de `zap-full-scan.py`.
+
+**Un script ZAP natif tire lui-même l'image `weekly` (0.5.1, TF-2884).** Hors d'un conteneur (`WEBSEC_DAST_ZAP` ou le `PATH`),
+`zap-baseline.py`, `zap-full-scan.py` et `zap-api-scan.py` lancent chacun `docker pull ghcr.io/zaproxy/zaproxy:weekly`, puis y font
+tourner le balayage (`zap_common.start_docker_zap`). Lu le 26/11/2026 dans l'image épinglée (`docker run --network none`, sans
+balayage) : l'étiquette est écrite en dur à chaque appel (`zap-baseline.py` ligne 543, `zap-api-scan.py` ligne 382,
+`zap-full-scan.py` ligne 319, `zap_common.py` ligne 335) et aucune option des trois scripts ne désigne une autre image. L'oracle ne
+peut donc pas leur passer l'image épinglée : les règles qui jugent la cible ne sont ni épinglées ni lues par
+`referentiels/zap-regles.json`. Le verdict le dit pour les trois formes, avec le code de la voie `WEBSEC_DAST_IMAGE` mobile,
+`DAST-IMAGE-MOBILE` (info, le verdict des alertes ne change pas) : le constat nomme la cause et le remède, lancer par la voie Docker
+de l'oracle (sans `WEBSEC_DAST_ZAP` ni `zap-*.py` dans le `PATH`, l'image épinglée étant présente), et `synthese.balayage.image_tiree_par_le_script`
+consigne l'étiquette tirée. `zap.sh` et `zap.bat` ne passent par aucun de ces scripts : pas de constat. Un script au nom inconnu n'est
+pas lu. Seule la voie Docker de l'oracle lance l'image épinglée.
 
 **Délai de ZAP (0.3.0, TF-2486).** `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, la
 durée de `plafond_requetes` requêtes (1000 par défaut) plus 5 min, jamais moins de 30 min ; sinon 30

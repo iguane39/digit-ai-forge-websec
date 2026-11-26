@@ -951,6 +951,90 @@ console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2853 : définition Ope
   fs.rmSync(dossier, { recursive: true, force: true });
 }
 
+// ── TF-2884 · un script ZAP natif tire lui-même l'image weekly : le verdict le dit ───────────────────────────
+// Classe audit-mute-l-arbre-audite (relevé du 25/11/2026 dans l'image 2.17.0) : lancés hors d'un conteneur, zap-baseline.py, zap-full-scan.py
+// et zap-api-scan.py exécutent `docker pull ghcr.io/zaproxy/zaproxy:weekly` (zap_common.start_docker_zap), sans option pour désigner une autre
+// image : les règles qui jugent la cible ne sont ni épinglées ni listées par referentiels/zap-regles.json. L'oracle ne peut pas leur passer l'image
+// épinglée, il émet donc DAST-IMAGE-MOBILE au verdict, pour les trois scripts. Un ZAP SIMULÉ (zap-simule.mjs, copié sous le nom de chaque script)
+// enregistre la ligne de commande : rien n'est émis vers une cible. Le témoin est la voie Docker de l'oracle, qui reste sans constat.
+console.log("\nSELF-TEST forge-websec — oracle-dast (TF-2884 : un script ZAP natif tire lui-même l'image weekly)\n");
+{
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), "websec-dast-natif-weekly-"));
+  const simule = (nom) => { const f = path.join(dossier, `${nom}.mjs`); fs.copyFileSync(AUTZ("zap-simule.mjs"), f); return f; };
+  const ZAP = { baseline: simule("zap-baseline"), complet: simule("zap-full-scan"), api: simule("zap-api-scan"), rapide: simule("zap") };
+  const trace = path.join(dossier, "trace.jsonl");
+  const lireTrace = () => (fs.existsSync(trace) ? fs.readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+  const lancer = (zap, mode, autz, rapport = "rapport-zap-propre.json", definition = null) => {
+    fs.rmSync(trace, { force: true });
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ(autz), "--mode", mode, ...(definition ? ["--openapi-fichier", definition] : [])], {
+      WEBSEC_DAST_ZAP: zap, WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ(rapport),
+    });
+    return { r, lignes: lireTrace() };
+  };
+  const constat = (r) => (r.findings || []).find((f) => f.regle === "DAST-IMAGE-MOBILE");
+  const dit = (f) => Boolean(f) && /ghcr\.io\/zaproxy\/zaproxy:weekly/.test(f.msg) && /voie Docker de l'oracle/.test(f.msg) && /aucune option|pas d'option/.test(f.msg);
+  // ── ROUGE : les trois scripts natifs rendent le constat, avec la cause et le remède ──
+  for (const [nom, zap, mode, autz, definition, script] of [
+    ["zap-baseline, mode passif", ZAP.baseline, "passif", "autorisation-valide.json", null, "zap-baseline.mjs"],
+    ["zap-full-scan, mode actif", ZAP.complet, "actif", "autorisation-actif.json", null, "zap-full-scan.mjs"],
+    ["zap-api-scan, mode passif, depuis une définition OpenAPI", ZAP.api, "passif", "autorisation-valide.json", AUTZ("openapi-dans-perimetre.json"), "zap-api-scan.mjs"],
+  ]) {
+    const { r, lignes } = lancer(zap, mode, autz, "rapport-zap-propre.json", definition);
+    const f = constat(r);
+    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === script && dit(f) && f.sev === "info" && f.msg.includes(script.replace(/\.mjs$/, "")),
+      `TF-2884 · ROUGE — ${nom} lancé hors conteneur : DAST-IMAGE-MOBILE au verdict, qui nomme le script, l'image weekly tirée et le remède « voie Docker de l'oracle » (obtenu ${r.verdict}, ${lignes.length} lancement, « ${f ? f.msg.slice(0, 110) : "aucun constat"} »)`);
+  }
+  // le constat ne change pas la sévérité des alertes : un rapport vulnérable reste FAIL, et porte le constat
+  {
+    const { r } = lancer(ZAP.baseline, "passif", "autorisation-valide.json", "rapport-zap-vulnerable.json");
+    ok(r.verdict === "FAIL" && aRegle(r, "DAST-SEUIL") && dit(constat(r)),
+      `TF-2884 · VERT — le constat s'ajoute aux alertes sans les masquer : un rapport vulnérable reste FAIL (DAST-SEUIL) et porte DAST-IMAGE-MOBILE (obtenu ${r.verdict})`);
+  }
+  // la synthèse consigne l'image tirée par le script ; synthese.balayage.image reste réservée à la voie Docker de l'oracle
+  {
+    const { r } = lancer(ZAP.baseline, "passif", "autorisation-valide.json");
+    const i = r.synthese?.balayage?.image_tiree_par_le_script;
+    ok(i && i.reference === "ghcr.io/zaproxy/zaproxy:weekly" && i.epinglee === false && r.synthese.balayage.image === undefined,
+      `TF-2884 · VERT — la synthèse consigne l'image que le script tire (reference, epinglee=false), sans annoncer d'image de l'oracle (obtenu ${JSON.stringify(i)})`);
+  }
+  // ── TÉMOINS : ce qui ne tire pas l'image weekly ne reçoit pas le constat ──
+  {
+    const { r, lignes } = lancer(ZAP.rapide, "actif", "autorisation-actif.json");
+    ok(r.verdict === "PASS" && lignes.length === 1 && lignes[0].script === "zap.mjs" && !constat(r),
+      `TF-2884 · TÉMOIN — zap.sh / zap.bat (forme rapide), qui ne passe par aucun script d'image, ne reçoit pas le constat (obtenu ${r.verdict}, ${lignes.length} lancement)`);
+  }
+  {
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-propre.json")]);
+    ok(r.verdict === "PASS" && !constat(r), `TF-2884 · TÉMOIN — un rapport fourni (--rapport) n'a lancé aucun script : pas de constat (obtenu ${r.verdict})`);
+  }
+  // voie Docker de l'oracle : l'image épinglée, aucun constat
+  const auPath = ["zap-baseline.py", "zap-full-scan.py", "zap-api-scan.py"].filter((s) => spawnSync(process.platform === "win32" ? "where" : "sh", process.platform === "win32" ? [s] : ["-c", `command -v ${s}`], { encoding: "utf8" }).status === 0);
+  if (auPath.length) skipNote(`TF-2884 · ${auPath.join(", ")} figure dans le PATH de ce poste : la voie Docker simulée ne peut pas être isolée, son témoin n'est pas joué`);
+  else {
+    const dockerSimule = path.join(dossier, "docker-simule.mjs");
+    fs.copyFileSync(AUTZ("docker-simule.mjs"), dockerSimule);
+    const IMAGE = (fs.readFileSync(ORACLE_DAST, "utf8").match(/const IMAGE_DEFAUT = "([^"]+)"/) || [])[1];
+    for (const [mode, autz] of [["passif", "autorisation-valide.json"], ["actif", "autorisation-actif.json"]]) {
+      fs.rmSync(trace, { force: true });
+      const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ(autz), "--mode", mode], {
+        WEBSEC_DAST_ZAP: "", WEBSEC_DAST_IMAGE: "", WEBSEC_DAST_DOCKER: dockerSimule, WEBSEC_DAST_SIMULE_IMAGES: IMAGE,
+        WEBSEC_DAST_SIMULE_TRACE: trace, WEBSEC_DAST_SIMULE_RAPPORT: AUTZ("rapport-zap-propre.json"),
+      });
+      const run = lireTrace().filter((l) => l.argv[0] === "run");
+      ok(r.verdict === "PASS" && run.length === 1 && !constat(r) && r.synthese?.balayage?.image?.epinglee === true && r.synthese.balayage.image_tiree_par_le_script === undefined,
+        `TF-2884 · TÉMOIN — voie Docker de l'oracle en ${mode} : l'image épinglée lance le script, aucun DAST-IMAGE-MOBILE (obtenu ${r.verdict}, ${run.length} lancement)`);
+    }
+  }
+  // non_juge nomme les trois scripts et le constat
+  {
+    const r = runDast(["--cible", CIBLE_OK, "--autorisation", AUTZ("autorisation-valide.json"), "--rapport", AUTZ("rapport-zap-propre.json")]);
+    const nj = (r.non_juge || []).join(" ");
+    ok(/zap-baseline\.py, zap-full-scan\.py et zap-api-scan\.py lancés hors d'un conteneur/.test(nj) && /DAST-IMAGE-MOBILE/.test(nj) && /weekly/.test(nj),
+      "TF-2884 · VERT — non_juge nomme les trois scripts natifs, l'image weekly qu'ils tirent et le constat DAST-IMAGE-MOBILE");
+  }
+  try { fs.rmSync(dossier, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* nettoyage du banc : un verrou Windows passager n'est pas un échec de preuve */ }
+}
+
 // ── TF-2001 · oracle-workflows : durcissement des workflows GitHub Actions, WF-1..WF-5 ────────
 // Déterministe : lecture de fichiers YAML synthétiques, aucun réseau, rien d'exécuté. Chaque rouge
 // doit lever SA règle et aucune autre règle dure, pour prouver qu'elle échoue pour la bonne raison.

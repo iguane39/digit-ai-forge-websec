@@ -70,7 +70,10 @@
 // l'image, listées dans referentiels/zap-regles.json ; une alerte dont le nom n'y figure pas est signalée
 // (DAST-REGLE-HORS-IMAGE, info). Une image désignée par WEBSEC_DAST_IMAGE sans empreinte ni version est dite
 // mobile au verdict (DAST-IMAGE-MOBILE) ; la mise à jour des modules d'un ZAP natif n'est pas maîtrisée, et
-// le verdict le consigne (synthese.balayage.maj_modules). Les règles bêta que `-silent` ne laisse plus
+// le verdict le consigne (synthese.balayage.maj_modules). Même code pour un ZAP natif de forme baseline, complet ou
+// api (TF-2884) : zap-baseline.py, zap-full-scan.py et zap-api-scan.py tirent eux-mêmes l'image ghcr.io/zaproxy/zaproxy:weekly
+// hors d'un conteneur, sans option pour en désigner une autre ; le verdict le dit (synthese.balayage.image_tiree_par_le_script)
+// et renvoie à la voie Docker de l'oracle. Les règles bêta que `-silent` ne laisse plus
 // s'installer sont nommées au verdict (synthese.balayage.regles_beta, TF-2499) et cas par cas dans
 // referentiels/wstg-cas.md ; aucune n'est réactivée par le réseau.
 // Délai de ZAP (TF-2486) : `duree_max_minutes` s'il est déclaré ; sinon, avec un débit, le temps de
@@ -96,7 +99,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.5.0";
+const VERSION = "0.5.1";
 const ORACLE = "oracle-dast";
 // `domaine` : champ du contrat d'oracle générique du pilot ; les deux oracles antérieurs de
 // cette forge (exposition, sca) le précèdent et ne le portent pas encore.
@@ -109,7 +112,7 @@ const NON_JUGE = [
   "la définition OpenAPI au-delà de ce que le garde-fou en lit : serveurs, chemins, méthodes, références, rappels et webhooks sont jugés ; les schémas, les paramètres et les valeurs que ZAP leur donne (valeurs par défaut, selon l'aide de l'add-on openapi de l'image) ne le sont pas — c'est pourquoi un chemin à segment variable ({id}) est refusé dès que le mandat déclare une exclusion",
   "une définition OpenAPI distante (URL, `-openapiurl`) : non prise en charge, la définition se fournit en fichier local (`--openapi-fichier`), lu et jugé avant tout lancement ; `-O` de zap-api-scan.py (remplacer le serveur de la définition) n'est pas passé, ZAP part des serveurs que le garde-fou a jugés",
   "une graine d'URL (`--graine`) : non prise en charge ; zap-baseline.py et zap-full-scan.py ne prennent qu'une URL de départ (-t), et une liste demanderait un crochet (--hook) ou un plan d'automatisation, non éprouvés contre l'image épinglée — la voie `--openapi-fichier` couvre le cas qui bloquait, une API sans lien",
-  "zap-api-scan.py lancé hors d'un conteneur (PATH ou WEBSEC_DAST_ZAP) : le script de l'image 2.17.0 lance alors lui-même l'image ghcr.io/zaproxy/zaproxy:weekly (docker pull), une étiquette mobile que l'oracle n'épingle pas ; seule la voie Docker de l'oracle lance l'image épinglée",
+  "zap-baseline.py, zap-full-scan.py et zap-api-scan.py lancés hors d'un conteneur (PATH ou WEBSEC_DAST_ZAP) : chacun des trois scripts de l'image 2.17.0 lance alors lui-même l'image ghcr.io/zaproxy/zaproxy:weekly (docker pull), une étiquette mobile que l'oracle n'épingle pas et dont les règles ne sont pas lues par referentiels/zap-regles.json ; aucune de leurs options ne désigne une autre image, donc l'oracle ne peut pas leur passer l'image épinglée et le dit au verdict (DAST-IMAGE-MOBILE, TF-2884) ; seule la voie Docker de l'oracle lance l'image épinglée. Un script au nom inconnu (forme « script-inconnu ») n'est pas lu : l'oracle ne sait pas s'il tire une image",
   "l'exploitabilité et le tri des faux positifs : une alerte ZAP est un signal à qualifier par un humain, jamais un verdict d'exploitation",
   "la fraîcheur des règles d'un ZAP natif du poste (version des add-ons, base de règles) — non interrogée par cet oracle, qui ne coupe pas non plus sa mise à jour au lancement ; seule l'image Docker est épinglée et sans mise à jour (TF-2477)",
   "les règles bêta (pscanrulesBeta, ascanrulesBeta) sur la voie Docker : elles ne sont pas dans l'image épinglée et la mise à jour qui les installait est coupée, elles ne tournent donc pas",
@@ -721,6 +724,8 @@ function cheminResolu(cmd) {
 const IMAGE_DEFAUT = "ghcr.io/zaproxy/zaproxy@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef";
 // Épinglée : par empreinte (`@sha256:…`) ou par version complète (`:2.17.0`), jamais par une étiquette mobile.
 const imageEpinglee = (ref) => /@sha256:[0-9a-f]{64}$/.test(ref) || /:\d+\.\d+\.\d+$/.test(ref);
+// TF-2884 : l'image que les scripts zap-baseline.py, zap-full-scan.py et zap-api-scan.py tirent eux-mêmes hors d'un conteneur (étiquette mobile).
+const IMAGE_WEEKLY_DES_SCRIPTS = "ghcr.io/zaproxy/zaproxy:weekly";
 // WEBSEC_DAST_DOCKER : le banc désigne un Docker simulé (script .mjs, joué par node) ; sinon `docker`.
 const DOCKER = process.env.WEBSEC_DAST_DOCKER || "docker";
 const lancerDocker = (a, opts) => (/\.mjs$/i.test(DOCKER) ? spawnSync(process.execPath, [DOCKER, ...a], opts) : spawnSync(DOCKER, a, opts));
@@ -902,6 +907,19 @@ if (zap.mode === "docker") {
     liste_lue: false,
     cas_par_cas: `referentiels/wstg-cas.md, section « ${SECTION_REGLES_BETA} » (dit ce que la voie Docker ne joue plus)`,
   };
+  // TF-2884 : lancés hors d'un conteneur, zap-baseline.py, zap-full-scan.py et zap-api-scan.py exécutent eux-mêmes `docker pull
+  // ghcr.io/zaproxy/zaproxy:weekly` (zap_common.start_docker_zap), puis y font tourner le balayage. Lu le 26/11/2026 dans l'image 2.17.0
+  // (docker run --network none, sans balayage) : l'étiquette est écrite en dur à chaque appel (zap-baseline.py ligne 543, zap-api-scan.py
+  // ligne 382, zap-full-scan.py ligne 319) et aucune option des trois scripts ne désigne une autre image. L'oracle ne peut donc pas leur
+  // passer l'image épinglée ; il le dit au verdict. zap.sh et zap.bat (forme « rapide ») ne passent par aucun de ces scripts.
+  if (["baseline", "complet", "api"].includes(zap.forme)) {
+    synthese.balayage.image_tiree_par_le_script = {
+      reference: IMAGE_WEEKLY_DES_SCRIPTS, epinglee: false,
+      cause: "le script tire lui-même cette image (docker pull) hors d'un conteneur ; aucune de ses options ne désigne une autre image",
+      remede: "lancer par la voie Docker de l'oracle (image épinglée)",
+    };
+    add("info", "DAST-IMAGE-MOBILE", `ZAP natif « ${zap.cmd} » (forme ${zap.forme}) : lancé hors d'un conteneur, le script tire lui-même l'image « ${IMAGE_WEEKLY_DES_SCRIPTS} » (docker pull), une étiquette mobile que l'oracle n'épingle pas et dont les règles ne sont pas lues par referentiels/zap-regles.json. Le script n'offre aucune option pour désigner une autre image (lu dans l'image 2.17.0 le 26/11/2026) : l'oracle ne peut pas lui passer l'image épinglée. Remède : lancer par la voie Docker de l'oracle, sans WEBSEC_DAST_ZAP ni zap-*.py dans le PATH, l'image « ${IMAGE_DEFAUT} » étant présente sur le poste.`, origineCible);
+  }
 }
 if (cwd) synthese.balayage.dossier_courant = cwd;
 
